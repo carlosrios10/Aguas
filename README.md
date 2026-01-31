@@ -2,6 +2,8 @@
 
 POC de pipeline de ML para detección de anomalías/consumo (Querétaro): ETL, construcción de dataset wide, entrenamiento con LightGBM e inferencia.
 
+**Repositorio:** [https://github.com/carlosrios10/Aguas](https://github.com/carlosrios10/Aguas)
+
 ## Descripción
 
 El proyecto procesa datos de inspecciones y consumo, construye un dataset en formato wide con features de series de tiempo (tsfel, tendencias, consumo constante, etc.), entrena un modelo LGBM y permite ejecutar inferencia. El flujo está organizado en cuatro pasos ejecutables desde notebooks en `poc/`.
@@ -25,7 +27,7 @@ queretaro_poc/
 │   │   └── legacy/              # Código legacy (no usado en poc)
 │   └── preprocessing/           # Preprocesado para el modelo
 │       ├── preprocessing.py     # ToDummy, TeEncoder, CardinalityReducer, MinMaxScalerRow
-│       └── legacy.py           # Código legacy (no usado en poc)
+│       └── legacy.py            # Código legacy (no usado en poc)
 ├── data/                        # Datos (no versionados; ver docs)
 ├── models/                      # Modelos guardados (.pkl, no versionados)
 ├── docs/                        # Documentación (p. ej. creación de entorno)

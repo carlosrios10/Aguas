@@ -48,8 +48,8 @@ cd C:\ruta\a\tu\proyecto
 Si acabas de clonar el repo:
 
 ```bash
-git clone https://github.com/TU_USUARIO/queretaro_poc.git
-cd queretaro_poc
+git clone https://github.com/carlosrios10/Aguas.git
+cd Aguas
 ```
 
 **3.3 Crear el entorno virtual**
