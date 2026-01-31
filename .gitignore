@@ -1,9 +1,9 @@
-# Datos y modelos (no versionados)
-data/
-models/
+# Datos y modelos en la raíz (no versionados). / = solo en raíz del repo (no ignora src/data)
+/data/
+/models/
 
-# Notebooks de desarrollo (no versionados por ahora)
-notebooks/
+# Notebooks de desarrollo en la raíz (no versionados por ahora)
+/notebooks/
 
 # Entorno virtual
 qenv/
