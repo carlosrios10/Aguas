@@ -1,0 +1,28 @@
+# Datos y modelos (no versionados)
+data/
+models/
+
+# Notebooks de desarrollo (no versionados por ahora)
+notebooks/
+
+# Entorno virtual
+qenv/
+venv/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+.eggs/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

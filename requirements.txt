@@ -1,0 +1,11 @@
+jupyterlab==4.3.6
+scipy==1.8.1
+tsfel==0.1.4
+pandas==1.5.3
+Boruta==0.4.3
+imbalanced-learn==0.12.3
+tqdm==4.67.1
+pyarrow==15.0.0
+scikit-learn==1.4.2
+lightgbm==4.6.0
+unidecode==1.4.0
