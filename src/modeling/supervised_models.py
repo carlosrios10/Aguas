@@ -25,126 +25,35 @@ def binary_area_peligrosa(x):
     return x.map({'zona peligrosa':1,'zona no peligrosa':0}).to_frame()
 
 def get_preprocesor(preprocesor):
-    
-    if preprocesor==-1:
-        preprocessor = ColumnTransformer(transformers= [],remainder='passthrough')
-        
-    if preprocesor==2:
-        # Actividad 
-        pipe_actividad = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.001)),
-                    ('a_dummy',ToDummy(['distrito']))
-                ])
-
-        # Segmento Tarifa
-        pipe_tarifa = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.001)),
-                    ('tarifa_te',TeEncoder(['tipo_tarifa'],w=20))
-                ])
-        
-        pipe_distrito = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.001)),
-                    ('distrito_te',TeEncoder(['id_distrito'],w=20))
-                ])
-        
-        vars_enc = ['id_cant_fases','id_tarifa']
-        t_features = [
-            ('var_encoder', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), vars_enc),
-            # ('a_dummy',ToDummy(['clasif_tarifa'])),
-            # ('material_isntalacion_te', TeEncoder(['material_instalacion'],w=10), ['material_instalacion']),
-            # ('actividad_cr_dummy', pipe_actividad, ['distrito']),
-            ('ditrito_cr_te', pipe_distrito, ['id_distrito']),
-            ('area_peligrosa_binary', FunctionTransformer(), 'area_peligrosa'),
-            ]
-
-        preprocessor = ColumnTransformer(transformers= t_features,remainder='passthrough')
-        
-    if preprocesor==3:
-        pipe_tarifa = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.003)),
-                    ('te',TeEncoder(['id_tarifa'],w=1))
-                ])
-        pipe_marca_medidor = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.03)),
-                    ('te',TeEncoder(['marca_medidor'],w=1))
-                ])
-        pipe_distrito = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
-                    ('te',TeEncoder(['id_distrito'],w=20))
-                ])
-        pipe_tipo_medidor = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
-                    ('te',TeEncoder(['id_tipo_medidor'],w=20))
-                ])
-        pipe_id_ciu = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
-                    ('te',TeEncoder(['id_ciu'],w=20))
-                ])
-        vars_dummy = ['tip_instalacion','tipo_cliente']
-        t_features = [
-            ('dummy_var', ToDummy(vars_dummy), vars_dummy),
-            ('pipe_tarifa', pipe_tarifa, ['id_tarifa']),
-            ('pipe_marca_medidor', pipe_marca_medidor, ['marca_medidor']),
-            ('pipe_distrito', pipe_distrito, ['id_distrito']),
-            ('pipe_tipo_medidor', pipe_tipo_medidor, ['id_tipo_medidor']),
-            ('pipe_id_ciu', pipe_id_ciu, ['id_ciu']),
-            ('area_peligrosa_binary', FunctionTransformer(binary_area_peligrosa), 'area_peligrosa'),
-            ]
-
-    if preprocesor == 4:
-        # Actividad 
-        pipe_tipo_servicio = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
-                    ('te',TeEncoder(['tipo_de_servicio'],w=50))
-                ])
-        
-        pipe_modelo_medidor = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
-                    ('te',TeEncoder(['modelo_medidor'],w=50))
-                ])
-        
-        vars_enc = ["localidad", "colonia"]
-        vars_dummy = ['estado_medidor','tiene_vida_util_1']
-        t_features = [
-            ('enc_var', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), vars_enc),
-            ('dummy_var', ToDummy(vars_dummy), vars_dummy),
-            ('p_tipo_servicio', pipe_tipo_servicio, ['tipo_de_servicio']),
-            ('p_modelo_medidor', pipe_modelo_medidor, ['modelo_medidor']),
-            ]
-
-        preprocessor = ColumnTransformer(transformers= t_features,remainder='passthrough')
-
-    if preprocesor == 5:
-        pipe_tipo_serv = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
-                     ('te',TeEncoder(['tipo_serv_gral'],w=50))
-                ])
-        
-        pipe_marca = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
-                     ('te',TeEncoder(['marca_gral'],w=50))
-                ])
-        
+    """Preprocesador para features categóricas. Soporta: -1 (passthrough), 1 (dummy + TE estrato/localidad)."""
+    if preprocesor == -1:
+        preprocessor = ColumnTransformer(transformers=[], remainder='passthrough')
+    elif preprocesor == 1:
+        pipe_estrato = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.05)),
+            ('te', TeEncoder(['subcategoria_estrato'], w=50))
+        ])
         pipe_localidad = Pipeline([
-                    ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
-                     ('te',ToDummy(['localidad_grl']))
-                ])
-        vars_enc = ["modelo_gral"]
+            ('cardinality_reducer', CardinalityReducer(threshold=0.005)),
+            ('te', TeEncoder(['localidad'], w=50))
+        ])
+        vars_dummy = ['categoria']
         t_features = [
-            ('enc_var', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), vars_enc),
-            ('p_tipo_serv', pipe_tipo_serv, ['tipo_serv_gral']),
-             ('p_marca', pipe_marca, ['marca_gral']),
-            ('p_localidad', pipe_localidad, ['localidad_grl']),
-            ]
-
-        preprocessor = ColumnTransformer(transformers= t_features,remainder='passthrough')
-
-    
+            ('dummy_var', ToDummy(vars_dummy), vars_dummy),
+            ('p_localidad', pipe_localidad, ['localidad']),
+            ('p_estrato', pipe_estrato, ['subcategoria_estrato']),
+        ]
+        preprocessor = ColumnTransformer(transformers=t_features, remainder='passthrough')
+    else:
+        raise ValueError(
+            f"preprocesor debe ser -1 o 1; recibido: {preprocesor}. "
+            "Valores soportados: -1=passthrough, 1=dummy+TE."
+        )
     return preprocessor
 
 class LGBMModel():
     
-        def __init__(self,cols_for_model,hyperparams,search_hip=False,sampling_th = 0.5,preprocesor_num = 3,sampling_method = 'under'):
+        def __init__(self, cols_for_model, hyperparams, search_hip=False, sampling_th=0.5, preprocesor_num=-1, sampling_method='under'):
             """
             Initializes the LGBMModel.
 
@@ -177,7 +86,7 @@ class LGBMModel():
         
         def train(self,df_train,y_train,df_val=None,y_val=None):
             if  df_val is None:
-                 df_train, df_val, y_train, y_val = train_test_split(df_train,y_train, test_size=0.1, random_state=42)
+                 df_train, df_val, y_train, y_val = train_test_split(df_train,y_train, test_size=0.2, random_state=42)
             
             pipe_preproceso_model = self.build_pipeline_preproceso_model()
             

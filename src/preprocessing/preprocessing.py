@@ -13,6 +13,22 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.base import BaseEstimator, TransformerMixin
 
 
+def preprocess_model_input(df):
+    """
+    Limpieza de entrada para train/inference del modelo.
+
+    Reglas:
+    - Normaliza variables categóricas con fillna('sin_dato') + strip.
+    - Filtra por calidad de historia de consumo.
+    """
+    vars_str = ["categoria", "subcategoria_estrato", "municipio", "localidad", "barrio"]
+    for col in vars_str:
+        df[col] = df[col].fillna("sin_dato").astype(str).str.strip()
+    df = df[df["cant_null"] < 6].reset_index(drop=True)
+    df = df[df["cant_ceros_12"] < 9].reset_index(drop=True)
+    return df
+
+
 class ToDummy(BaseEstimator, TransformerMixin):
     """
     Transforma variables categóricas en variables dummy.

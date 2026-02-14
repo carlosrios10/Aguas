@@ -1,21 +1,27 @@
-# Querétaro POC
+# AR-EPM POC
 
-POC de pipeline de ML para detección de anomalías/consumo (Querétaro): ETL, construcción de dataset wide, entrenamiento con LightGBM e inferencia.
+POC de pipeline de ML para detección de anomalías/fraude en consumo: ETL, construcción de dataset wide, entrenamiento con LightGBM e inferencia.
 
 **Repositorio:** [https://github.com/carlosrios10/Aguas](https://github.com/carlosrios10/Aguas)
 
 ## Descripción
 
-El proyecto procesa datos de inspecciones y consumo, construye un dataset en formato wide con features de series de tiempo (tsfel, tendencias, consumo constante, etc.), entrena un modelo LGBM y permite ejecutar inferencia. El flujo se ejecuta con **tres notebooks** en `poc/`.
+El proyecto procesa datos de inspecciones y consumo, construye un dataset en formato wide con features de series de tiempo (tsfel, tendencias, consumo constante, etc.), entrena un modelo LGBM y permite ejecutar inferencia. La **configuración** está centralizada en `config/config.yaml`. El flujo se puede ejecutar con **notebooks** en `poc/` o con **scripts** en `scripts/`.
 
 ## Estructura del proyecto
 
 ```
-queretaro_poc/
-├── poc/                         # Pipeline principal (3 notebooks, ejecutar en orden)
-│   ├── 1_etl.ipynb              # Paso 1: ETL mensual (raw → interim)
-│   ├── train.ipynb              # Paso 2: Dataset train + entrenamiento LGBM + calibración
-│   └── inference.ipynb         # Paso 3: Dataset inferencia + scoring
+ar-epm_poc/
+├── config/
+│   └── config.yaml              # Configuración: paths, etl, train, inference
+├── scripts/                     # Scripts ejecutables (alternativa a notebooks)
+│   ├── run_etl.py               # ETL: raw → interim
+│   ├── run_train.py             # Dataset train + entrenamiento LGBM
+│   └── run_inference.py         # Dataset inferencia + scoring
+├── poc/                         # Pipeline en notebooks (ejecutar en orden)
+│   ├── 1_etl.ipynb             # Paso 1: ETL mensual (raw → interim)
+│   ├── train.ipynb              # Paso 2: Dataset train + entrenamiento LGBM
+│   └── inference.ipynb          # Paso 3: Dataset inferencia + scoring
 ├── src/
 │   ├── data/                    # ETL y construcción de dataset
 │   │   ├── etl.py               # ETL mensual (inspecciones, consumo)
@@ -35,17 +41,21 @@ queretaro_poc/
 ├── models/                      # Modelos y artefactos (no versionados)
 │   ├── features.pkl            # Lista de columnas para el modelo (desarrollo)
 │   ├── hyperparams.pkl          # Hiperparámetros LGBM (desarrollo)
-│   └── lgbm_model_cal.pkl       # Modelo calibrado (salida del train)
+│   └── lgbm_model.pkl           # Modelo entrenado (salida del train)
 ├── docs/                        # Documentación (p. ej. setup.md)
 ├── requirements.txt
 └── README.md
 ```
 
-- **poc/**: tres notebooks que orquestan el flujo completo (1_etl → train → inference).
+- **config/**: `config.yaml` define rutas (`paths`), opciones ETL (`etl`), parámetros de train e inferencia. Los notebooks y scripts leen esta config.
+- **scripts/**: `run_etl.py`, `run_train.py`, `run_inference.py` ejecutan el pipeline desde línea de comandos (usan `config/config.yaml` por defecto; se puede pasar `--config otro.yaml`).
+- **poc/**: notebooks equivalentes a los scripts para desarrollo y exploración.
 - **src/**: código reutilizable (ETL, dataset, modelo, preprocesado).
 - **data/** y **models/**: no se suben a Git; en otra máquina se copian o generan (ver `docs/`).
 
 ## Cómo ejecutar
+
+Para uso operativo mensual (solo editar config e ejecutar ETL e inferencia), ver **[Manual de usuario](docs/manual_usuario.md)**.
 
 ### Prerrequisitos
 
@@ -62,31 +72,56 @@ queretaro_poc/
 3. **Artefactos para train**  
    El notebook de train espera en `models/` los archivos `features.pkl` y `hyperparams.pkl`. Si no existen, hay que crearlos antes (proceso de selección de features e hiperparámetros).
 
-### Orden de ejecución
+### Configuración (`config/config.yaml`)
 
-Ejecutar los notebooks **desde la raíz del proyecto** (o con el kernel configurado para que la raíz sea el directorio del proyecto) para que los imports `from src...` y las rutas relativas (`../data/`, `../models/`) resuelvan correctamente.
+Todos los parámetros editables están en un solo archivo:
+
+- **paths**: rutas a `raw`, `interim`, `processed`, `models`, `predictions` (relativas a la raíz del proyecto).
+- **etl**: `sources` (inspecciones, consumo), `overwrite` (reprocesar todo o solo pendientes).
+- **train**: `cutoff`, `cant_periodos`, `max_ctas_neg`, sampling (`sam_th`, `param_imb_method`), `preprocesor_num`.
+- **inference**: `cutoff`, `cant_periodos`, `contratos_list` (null = todos los contratos con consumo).
+
+Los notebooks y los scripts leen esta config; los scripts permiten usar otro archivo con `--config otro.yaml`.
+
+### Ejecución por scripts (desde la raíz del proyecto)
+
+```bash
+python scripts/run_etl.py                    # ETL (usa paths y etl.* de config)
+python scripts/run_etl.py --overwrite         # Reprocesar todo
+python scripts/run_etl.py --config prod.yaml
+
+python scripts/run_train.py                   # Train (usa paths y train.* de config)
+python scripts/run_train.py --config prod.yaml
+
+python scripts/run_inference.py               # Inferencia (usa paths e inference.* de config)
+python scripts/run_inference.py --config prod.yaml
+```
+
+### Ejecución por notebooks
+
+Ejecutar los notebooks **desde la raíz del proyecto** (o con el kernel configurado con la raíz como directorio de trabajo) para que los imports `from src...` y la carga de config funcionen.
 
 | Orden | Notebook        | Qué hace |
 |-------|-----------------|----------|
-| 1     | `1_etl.ipynb`   | Lee datos de `data/raw/`, los procesa y escribe en `data/interim/` (parquets por año/mes: consumo, inspecciones). |
-| 2     | `train.ipynb`   | Lee `data/interim/`, construye el dataset wide de **train** (todas las fechas de corte con inspecciones ≤ CUTOFF), entrena LGBM, calibra y guarda `models/lgbm_model_cal.pkl`. Usa `models/features.pkl` y `models/hyperparams.pkl`. |
-| 3     | `inference.ipynb` | Lee `data/interim/`, construye el dataset wide de **inferencia** para un CUTOFF (mes a predecir), carga el modelo y features, calcula scores y guarda `data/predictions/scores_<CUTOFF>.csv`. |
+| 1     | `1_etl.ipynb`   | ETL: lee `data/raw/`, procesa y escribe en `data/interim/` (parquets por año/mes). Usa `config` para paths y `etl.sources`/`etl.overwrite`. |
+| 2     | `train.ipynb`   | Lee `data/interim/`, construye dataset wide de **train** (fechas de corte ≤ cutoff de config), entrena LGBM y guarda `models/lgbm_model.pkl`. Usa `models/features.pkl` y `models/hyperparams.pkl`. |
+| 3     | `inference.ipynb` | Construye dataset wide de **inferencia** para el cutoff de config, carga modelo y features, guarda `data/predictions/scores_<CUTOFF>.csv`. |
 
-### Parámetros importantes
+### Parámetros importantes (en `config/config.yaml`)
 
-- **CUTOFF (train)**  
-  Fecha tope de inspecciones: se usan **todos** los meses con inspecciones hasta esa fecha para armar el dataset de train (no solo ese mes). Se configura en el notebook de train.
+- **train.cutoff**  
+  Fecha tope de inspecciones: se usan todos los meses con inspecciones hasta esa fecha para el dataset de train.
 
-- **CUTOFF (inference)**  
-  Mes que se quiere predecir; ese mes **no** entra en el análisis (solo se usa consumo anterior). Define también el nombre del CSV de salida (`scores_<CUTOFF>.csv`).
+- **inference.cutoff**  
+  Mes a predecir; ese mes no entra en el análisis (solo consumo anterior). Define el nombre del CSV de salida (`scores_<CUTOFF>.csv`).
 
-- **CANT_PERIODOS**  
-  Ventana de meses de consumo hacia atrás (p. ej. 12). Común en train e inferencia.
+- **cant_periodos** (train e inference)  
+  Ventana de meses de consumo hacia atrás (p. ej. 12).
 
 ### Resumen de inputs y outputs
 
-| Notebook       | Inputs principales                          | Outputs principales |
-|----------------|---------------------------------------------|----------------------|
-| `1_etl.ipynb`  | `data/raw/`                                 | `data/interim/`      |
-| `train.ipynb`  | `data/interim/`, `models/features.pkl`, `models/hyperparams.pkl` | `data/processed/train/.../train_wide.parquet`, `models/lgbm_model_cal.pkl` |
-| `inference.ipynb` | `data/interim/`, `models/lgbm_model_cal.pkl`, `models/features.pkl` | `data/processed/inference/.../inference_wide.parquet`, `data/predictions/scores_<CUTOFF>.csv` |
+| Paso     | Inputs principales                                              | Outputs principales |
+|----------|------------------------------------------------------------------|---------------------|
+| ETL      | `data/raw/`, `config` (paths, etl)                               | `data/interim/`     |
+| Train    | `data/interim/`, `models/features.pkl`, `models/hyperparams.pkl`, `config` (paths, train) | `data/processed/train/.../`, `models/lgbm_model.pkl` |
+| Inferencia | `data/interim/`, `models/lgbm_model.pkl`, `models/features.pkl`, `config` (paths, inference) | `data/processed/inference/.../`, `data/predictions/scores_<CUTOFF>.csv` |

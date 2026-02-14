@@ -1,12 +1,29 @@
 """
-ETL mensual: inspecciones y consumo (Querétaro).
+ETL mensual: inspecciones y consumo.
 Procesamiento incremental: raw xlsx → interim parquet por año/mes.
+Adecuado para empresa con columnas: servicio_suscrito/fecha/clasificacion_resultado (inspecciones)
+y niu/fecha_mes/consumo (consumo).
 """
 import os
 import re
 import glob
+import unicodedata
 import pandas as pd
 from tqdm import tqdm
+
+
+def normalizar_cadena(texto):
+    """
+    Normaliza una cadena: minúsculas, sin tildes, no alfanuméricos → guión bajo.
+    Usado para homogeneizar nombres de columnas.
+    """
+    if not isinstance(texto, str):
+        texto = str(texto)
+    texto = texto.lower()
+    texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("utf-8")
+    texto = re.sub(r"[^\w\s]", "", texto)
+    texto = re.sub(r"\s+", "_", texto.strip())
+    return texto
 
 
 # ============================================================================
@@ -49,75 +66,71 @@ def get_pending_months(raw_dir, interim_dir, source_name):
 
 def clean_inspecciones(df):
     """
-    Limpieza específica para inspecciones (Querétaro)
-
-    Args:
-        df: DataFrame con datos de inspecciones
-
-    Returns:
-        DataFrame limpio
+    Limpieza específica para inspecciones.
+    Espera columnas: servicio_suscrito (→ contrato), fecha (%Y%m), clasificacion_resultado (→ is_fraud).
     """
-    df.columns = df.columns.str.lower()
+    df = df.copy()
+    df.columns = [normalizar_cadena(c) for c in df.columns]
 
-    df['fecfin_hins'] = pd.to_datetime(df['fecfin_hins'], errors='coerce')
-    df = df.dropna(subset=['fecfin_hins']).copy()
+    df = df.rename(columns={"servicio_suscrito": "contrato"})
+    df["contrato"] = df["contrato"].astype(str).str.strip()
+    df = df[df["contrato"].str.len() == 9].copy()
+    df = df.dropna(subset=["contrato"]).reset_index(drop=True)
 
-    df['year'] = df['fecfin_hins'].dt.year
-    df['month'] = df['fecfin_hins'].dt.month
-    df['date'] = pd.to_datetime(
-        df['year'].astype(str) + '-' +
-        df['month'].astype(str).str.zfill(2) + '-01'
+    df["fecha"] = pd.to_datetime(df["fecha"], format="%Y%m", errors="coerce")
+    df = df.dropna(subset=["fecha"]).copy()
+
+    df = df[df["clasificacion_resultado"] != "Sin definición"].reset_index(drop=True)
+    df["is_fraud"] = df["clasificacion_resultado"].isin(["Fraude", "Anomalía"]).astype(int)
+
+    df["month"] = df["fecha"].dt.month
+    df["year"] = df["fecha"].dt.year
+    df["date"] = pd.to_datetime(
+        df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01"
     )
 
-    if 'acta_hins' in df.columns:
-        df['is_fraud'] = df['acta_hins'].isin([1]).astype(int)
-    else:
-        df['is_fraud'] = 0
-
-    if 'numcontratoacis_orcoa' in df.columns:
-        df = df.rename(columns={'numcontratoacis_orcoa': 'contrato'})
-
-    df = df.dropna(subset=['contrato']).reset_index(drop=True)
-
-    df = df.sort_values(['contrato', 'date', 'is_fraud'], ascending=[True, True, False])
-    df = df.drop_duplicates(subset=['contrato', 'date'], keep='first').reset_index(drop=True)
-
+    df = df.loc[df.groupby(["contrato", "date"])["is_fraud"].idxmax()].reset_index(drop=True)
+    if "solicitud" in df.columns:
+        df["solicitud"] = df["solicitud"].astype(str)
     return df
 
 
 def clean_consumo(df):
     """
-    Limpieza específica para consumo (Querétaro)
-
-    Args:
-        df: DataFrame con datos de consumo
-
-    Returns:
-        DataFrame limpio
+    Limpieza específica para consumo.
+    Espera columnas: niu (→ contrato), fecha_mes (%Y%m), consumo.
     """
-    df.columns = df.columns.str.lower()
+    df = df.copy()
+    df.columns = [normalizar_cadena(c) for c in df.columns]
 
-    df['anio_grl'] = pd.to_numeric(df['anio_grl'], errors='coerce').astype('Int64')
-    df['periodo_grl'] = pd.to_numeric(df['periodo_grl'], errors='coerce').astype('Int64')
+    df = df.rename(columns={"niu": "contrato"})
+    df["contrato"] = df["contrato"].astype(str).str.strip()
+    if "instalacion" in df.columns:
+        df["instalacion"] = df["instalacion"].astype(str).str.strip()
+    if "subcategoria_estrato" in df.columns:
+        df["subcategoria_estrato"] = df["subcategoria_estrato"].astype(str).str.strip()
 
-    df = df.dropna(subset=['anio_grl', 'periodo_grl']).copy()
-    df = df[df['periodo_grl'].between(1, 12)].copy()
-
-    df['date'] = pd.to_datetime(
-        df['anio_grl'].astype(str) + '-' +
-        df['periodo_grl'].astype(str).str.zfill(2) + '-01'
+    df["fecha_mes"] = pd.to_datetime(df["fecha_mes"], format="%Y%m", errors="coerce")
+    df = df.dropna(subset=["fecha_mes"]).copy()
+    df["month"] = df["fecha_mes"].dt.month
+    df["year"] = df["fecha_mes"].dt.year
+    df["date"] = pd.to_datetime(
+        df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01"
     )
+    df = df.dropna(subset=["contrato"]).reset_index(drop=True)
 
-    if 'contrato_grl' in df.columns:
-        df = df.rename(columns={'contrato_grl': 'contrato'})
-    if 'consumo_gral' in df.columns:
-        df = df.rename(columns={'consumo_gral': 'consumo'})
+    df["consumo"] = df["consumo"].apply(lambda x: None if pd.isna(x) or x < 0 else x)
 
-    df = df.dropna(subset=['contrato']).reset_index(drop=True)
+    if "localidad" in df.columns:
+        df["localidad"] = df["localidad"].astype(str).str.strip()
+    if "municipio" in df.columns:
+        df["municipio"] = df["municipio"].astype(str).str.strip()
+    if "barrio" in df.columns:
+        df["barrio"] = df["barrio"].fillna("sin_dato").astype(str).str.strip()
+    if "determinacion_consumo" in df.columns:
+        df["determinacion_consumo"] = df["determinacion_consumo"].astype(str).str.strip()
 
-    if 'consumo' in df.columns:
-        df['consumo'] = df['consumo'].apply(lambda x: None if pd.isna(x) or x < 0 else x)
-
+    df = df.sort_values("date").reset_index(drop=True)
     return df
 
 
