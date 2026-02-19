@@ -5,6 +5,7 @@ inference:
   cutoff: "2026-03-01"
   cant_periodos: 12
   contratos_list: null  # null = todos los contratos con consumo en la ventana
+  columns_filter: null  # ej: { ciclo: ["14"] } — null = sin filtro
 
 paths:
   raw: "data/raw"
@@ -12,6 +13,10 @@ paths:
   processed: "data/processed"
   models: "models"
   predictions: "data/predictions"
+  logs: "data/logs"
+
+# Nivel de log: DEBUG, INFO, WARNING, ERROR
+log_level: "INFO"
 
 etl:
   sources:

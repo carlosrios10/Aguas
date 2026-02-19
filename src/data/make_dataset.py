@@ -3,6 +3,7 @@ Construcción de dataset wide y features de consumo.
 Carga desde interim, construcción wide por fecha de corte, ingeniería de variables.
 Usado por poc/train, poc/inference y notebooks de desarrollo.
 """
+import logging
 import os
 import re
 import glob
@@ -13,6 +14,8 @@ import tsfel
 from tqdm import tqdm
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
+
+logger = logging.getLogger(__name__)
 
 
 class TsfelVars(BaseEstimator, TransformerMixin):
@@ -428,12 +431,12 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
     """
     df_ordenes = load_interim_data(interim_dir, "inspecciones")
     if df_ordenes.empty:
-        print("[WARN] No hay datos en interim para inspecciones.")
+        logger.warning("No hay datos en interim para inspecciones.")
         return None
 
     min_date_consumo, _ = get_consumo_date_range(interim_dir)
     if min_date_consumo is None:
-        print("[WARN] No hay archivos de consumo en interim.")
+        logger.warning("No hay archivos de consumo en interim.")
         return None
 
     fecha_list = get_fecha_fraud_list(
@@ -441,11 +444,11 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
         cutoff_max=cutoff_max, min_date_consumo=min_date_consumo
     )
     if not fecha_list:
-        print("[WARN] No hay fechas de corte válidas.")
+        logger.warning("No hay fechas de corte válidas.")
         return None
 
     if cutoff_max is None:
-        print("[INFO] Se procesarán todas las inspecciones que estén en la carpeta (sin límite de fecha).")
+        logger.info("Se procesarán todas las inspecciones que estén en la carpeta (sin límite de fecha).")
 
     list_df = []
     for fecha_fraud in tqdm(fecha_list, desc="Train dataset"):
@@ -479,15 +482,16 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, "train_wide.parquet")
     df_wide.to_parquet(out_file, index=False)
-    print(f"[OK] Guardado: {out_file} ({len(df_wide)} filas)")
+    logger.info("Dataset de train guardado: %s (%s filas).", out_file, len(df_wide))
     return df_wide
 
 
-def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=12, contratos_list=None):
+def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=12, contratos_list=None, columns_filter=None):
     """
     Construye dataset wide para una fecha de corte sin target (para scoring).
     Solo carga meses en [cutoff - cant_periodos, cutoff] desde interim.
     cutoff debe ser no nulo y tener formato de fecha válido (ej. YYYY-MM-DD).
+    columns_filter: dict opcional columna -> lista de valores; filtra antes de tsfel.
     """
     if cutoff is None or (isinstance(cutoff, str) and not cutoff.strip()):
         raise ValueError("inference.cutoff es obligatorio y no puede estar vacío.")
@@ -507,18 +511,18 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     start_d, end_d = get_date_range_for_cutoff(cutoff, cant_periodos)
     df_consumo = load_interim_data(interim_dir, "consumo", start_date=start_d, end_date=end_d)
     if df_consumo.empty:
-        print("[WARN] No hay consumo en interim.")
+        logger.warning("No hay consumo en interim.")
         return None
 
     meses_cargados = df_consumo["date"].dt.to_period("M").nunique()
     if meses_cargados < cant_periodos:
-        print(
-            f"[WARN] Se requieren {cant_periodos} meses de consumo en el rango "
-            f"[{start_d.strftime('%Y-%m-%d')}, {end_d.strftime('%Y-%m-%d')}], "
-            f"pero solo hay {meses_cargados} meses en interim. Ejecute el ETL para los meses faltantes."
+        logger.warning(
+            "Se requieren %s meses de consumo en el rango [%s, %s], pero solo hay %s meses en interim. Ejecute el ETL para los meses faltantes.",
+            cant_periodos, start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d"), meses_cargados,
         )
         return None
 
+    logger.info("Cargados %s meses de consumo para la ventana del cutoff.", meses_cargados)
     df_wide = create_dataset_wide_for_cutoff(
         cutoff, df_consumo, pd.DataFrame(), cant_periodos,
         VARS_FOR_ORDENES, VARS_FOR_CONSUMO, mode="inference"
@@ -527,7 +531,22 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     if df_wide.empty:
         return None
 
+    # Filtrar por columnas del dataset (antes de tsfel, que es costoso)
+    if columns_filter and isinstance(columns_filter, dict):
+        for col, valores in columns_filter.items():
+            if col not in df_wide.columns:
+                continue
+            vals = [str(v).strip() for v in (valores if isinstance(valores, list) else [valores])]
+            df_wide = df_wide[df_wide[col].astype(str).str.strip().isin(vals)]
+        if df_wide.empty:
+            logger.warning("Dataset de inferencia quedó vacío tras aplicar columns_filter.")
+            return None
+        logger.info("Filtro aplicado: %s contratos tras filtrar por %s.", len(df_wide), list(columns_filter.keys()))
+    if contratos_list is not None:
+        df_wide = df_wide[df_wide["contrato"].isin(contratos_list)]
+
     df_wide.reset_index(drop=True, inplace=True)
+    logger.info("Calculando variables de series de tiempo (tsfel); puede tardar varios minutos...")
     df_wide = llenar_val_vacios_ciclo(df_wide, cant_periodos)
     df_wide = compute_change_trend_percentaje_vars(df_wide, CONFIG_CAIDAS)
     df_wide = compute_constant_consumption_vars(df_wide, CONFIG_CONSTANTES)
@@ -535,12 +554,9 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     df_wide["index"] = range(len(df_wide))
     df_wide = compute_tsfel_consumption_vars(df_wide, cant_periodos)
 
-    if contratos_list is not None:
-        df_wide = df_wide[df_wide["contrato"].isin(contratos_list)]
-
     out_dir = os.path.join(processed_dir, "inference", f"cutoff={pd.to_datetime(cutoff).strftime('%Y-%m-%d')}")
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, "inference_wide.parquet")
     df_wide.to_parquet(out_file, index=False)
-    print(f"[OK] Guardado: {out_file} ({len(df_wide)} filas)")
+    logger.info("Dataset de inferencia guardado: %s (%s filas).", out_file, len(df_wide))
     return df_wide
