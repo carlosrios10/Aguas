@@ -2,11 +2,14 @@
 ETL mensual: inspecciones y consumo (Querétaro).
 Procesamiento incremental: raw xlsx → interim parquet por año/mes.
 """
+import logging
 import os
 import re
 import glob
 import pandas as pd
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -142,21 +145,21 @@ def process_month(raw_dir, interim_dir, source_name, year, month, clean_func, ov
     output_file = os.path.join(output_dir, f"{source_name}.parquet")
 
     if os.path.exists(output_file) and not overwrite:
-        print(f"  [SKIP] {source_name} {year}-{month:02d} ya procesado, saltando...")
+        logger.info("  [SKIP] %s %s-%02d ya procesado, saltando...", source_name, year, month)
         return False
 
     if not os.path.exists(raw_file):
-        print(f"  [WARN] {raw_file} no existe, saltando...")
+        logger.warning("  [WARN] %s no existe, saltando...", raw_file)
         return False
 
-    print(f"  [PROC] Procesando {source_name} {year}-{month:02d}...")
+    logger.info("  [PROC] Procesando %s %s-%02d...", source_name, year, month)
     df = pd.read_excel(raw_file)
     df = clean_func(df)
 
     os.makedirs(output_dir, exist_ok=True)
     df.to_parquet(output_file, index=False)
 
-    print(f"  [OK] Guardado: {output_file} ({len(df)} registros)")
+    logger.info("  [OK] Guardado: %s (%s registros)", output_file, len(df))
     return True
 
 
@@ -184,31 +187,31 @@ def run_monthly_etl(raw_dir="../../data/raw",
     summary = {}
 
     for source in sources:
-        print(f"\n{'='*60}")
-        print(f"[{source.upper()}]")
-        print(f"{'='*60}")
+        logger.info("\n%s", "=" * 60)
+        logger.info("[%s]", source.upper())
+        logger.info("%s", "=" * 60)
 
         if source not in clean_funcs:
-            print(f"  [WARN] Funcion de limpieza no definida para '{source}', saltando...")
+            logger.warning("  [WARN] Funcion de limpieza no definida para '%s', saltando...", source)
             continue
 
         raw_source_dir = os.path.join(raw_dir, source)
         if not os.path.exists(raw_source_dir):
-            print(f"  [WARN] Directorio {raw_source_dir} no existe, saltando...")
+            logger.warning("  [WARN] Directorio %s no existe, saltando...", raw_source_dir)
             continue
 
         pending = get_pending_months(raw_source_dir, interim_dir, source)
 
         if not pending:
-            print(f"  [OK] No hay meses pendientes")
+            logger.info("  [OK] No hay meses pendientes")
             summary[source] = {"processed": 0, "skipped": 0, "total_pending": 0}
             continue
 
-        print(f"  [INFO] {len(pending)} meses pendientes")
+        logger.info("  [INFO] %s meses pendientes", len(pending))
         if len(pending) <= 10:
-            print(f"     {pending}")
+            logger.info("     %s", pending)
         else:
-            print(f"     {pending[:5]} ... {pending[-5:]}")
+            logger.info("     %s ... %s", pending[:5], pending[-5:])
 
         processed_count = 0
         skipped_count = 0
@@ -228,6 +231,6 @@ def run_monthly_etl(raw_dir="../../data/raw",
             "skipped": skipped_count,
             "total_pending": len(pending)
         }
-        print(f"  [OK] {source}: {processed_count} procesados, {skipped_count} saltados")
+        logger.info("  [OK] %s: %s procesados, %s saltados", source, processed_count, skipped_count)
 
     return summary
