@@ -16,9 +16,10 @@ Cada mes usted solo debe **indicar el mes a predecir** y ejecutar el proceso. El
 ## 2. Requisitos previos
 
 - **Entorno Python** ya configurado en su máquina (entorno virtual activado, dependencias instaladas con `pip install -r requirements.txt`). Si no lo tiene, solicite apoyo al equipo técnico o consulte [docs/setup.md](setup.md) si existe.
-- **Datos de entrada:** En la carpeta `data/raw/` deben estar los archivos del mes según el formato esperado:
+- **Datos de entrada:** En la carpeta `data/raw/` deben estar los archivos según el formato esperado:
   - `data/raw/inspecciones/inspecciones_AAAA_MM.xlsx`
   - `data/raw/consumo/consumo_AAAA_MM.xlsx`
+  - `data/raw/maestro/maestro_AAAA_MM.xlsx` (obligatorio para inferencia; el ETL debe haberlo procesado)
   (sustituya AAAA por el año y MM por el mes, por ejemplo 2026 y 03).
 - **Modelo en uso:** En la carpeta `models/` deben existir los archivos `lgbm_model.pkl` y `features.pkl` (proporcionados o generados por el equipo que entrena el modelo).
 
@@ -37,10 +38,15 @@ Antes de ejecutar la inferencia, debe editar el archivo de configuración para i
 ```yaml
 inference:
   cutoff: "2026-03-01"
+  cant_periodos: 12
+  contratos_list: null
+  columns_filter: null   # opcional: filtrar por columnas del dataset (ej: { ciclo: ["14","16"] })
 ```
 
 - Use siempre comillas alrededor de la fecha.
 - El formato debe ser exactamente **YYYY-MM-DD** (por ejemplo `"2026-04-01"` para abril de 2026).
+- **columns_filter** (opcional): si desea restringir la inferencia a ciertos valores (por ejemplo solo algunos ciclos o localidades), indique un diccionario `columna: [valores]`. Si es `null`, se procesan todos los contratos con consumo.
+- En **paths** puede aparecer **logs: "data/logs"**; ahí se guardan archivos de log de cada ejecución (ETL, inferencia, entrenamiento). Opcionalmente puede configurarse **log_level: "INFO"** (o "DEBUG", "WARNING", "ERROR") en el YAML.
 - No modifique el resto del archivo a menos que le indiquen lo contrario.
 
 ---
@@ -85,22 +91,26 @@ Al finalizar la inferencia sin errores, el archivo de resultados se guarda en:
 
 Donde `<CUTOFF>` es la fecha que puso en `inference.cutoff` (por ejemplo `scores_2026-03-01.csv`). Ese CSV contiene, por contrato, el puntaje de riesgo (probabilidad de fraude/anomalía) según el modelo.
 
+Si en la config está definido **paths.logs** (por ejemplo `data/logs`), cada ejecución de ETL, inferencia o entrenamiento genera además un archivo de log con fecha y hora (por ejemplo `inference_20260218_120000.log`) para facilitar la depuración.
+
 ---
 
 ## 6. Si algo falla
 
 - **Error al cargar la config:** Compruebe que `config/config.yaml` existe y que la fecha en `inference.cutoff` tiene formato **YYYY-MM-DD** y está entre comillas.
 - **Error “inference.cutoff es obligatorio”:** No deje el cutoff vacío ni en blanco. Ponga una fecha válida, por ejemplo `"2026-03-01"`.
-- **Error por “meses cargados” o datos insuficientes:** Asegúrese de haber ejecutado el ETL para los meses que necesita la ventana de consumo (por defecto 12 meses hacia atrás desde el cutoff). Debe haber archivos en `data/interim/consumo/` para esos meses.
+- **Error por “meses cargados” o datos insuficientes:** Asegúrese de haber ejecutado el ETL para los meses que necesita la ventana de consumo (por defecto 12 meses hacia atrás desde el cutoff). Debe haber archivos en `data/interim/consumo/` y `data/interim/maestro/` para que la inferencia funcione.
+- **Error “No hay maestro en interim”:** La inferencia requiere el maestro procesado. Ejecute el ETL (incluyendo la fuente **maestro** en `config.yaml` → `etl.sources`) y asegúrese de tener al menos un archivo en `data/raw/maestro/` (por ejemplo `maestro_AAAA_MM.xlsx`).
+- **“Dataset de inferencia quedó vacío tras aplicar columns_filter”:** El filtro definido en `inference.columns_filter` no coincide con ningún contrato (por ejemplo valores de ciclo o localidad que no existen en los datos). Revise los valores en el maestro o deje `columns_filter: null` para procesar todos.
 - **Error al cargar el modelo:** Verifique que en `models/` existan `lgbm_model.pkl` y `features.pkl`. Si faltan, debe proporcionarlos el equipo que entrena el modelo.
 
-Si el mensaje de error no le resulta claro, anote el texto completo del error y contacte al equipo técnico.
+Si el mensaje de error no le resulta claro, revise los archivos en **`data/logs/`** (si existen); allí se guarda el detalle de cada ejecución. Anote el texto completo del error y contacte al equipo técnico si es necesario.
 
 ---
 
 ## 7. Entrenamiento del modelo (no es mensual)
 
-El **entrenamiento** del modelo (`python scripts/run_train.py`) no forma parte del flujo mensual del usuario. Se ejecuta cuando el equipo de análisis decide reentrenar (por ejemplo con más datos o nuevos parámetros). Usted solo debe ejecutar **ETL** (si hay datos nuevos) e **inferencia** cada mes, después de actualizar **inference.cutoff** en `config/config.yaml`.
+El **entrenamiento** del modelo no forma parte del flujo mensual del usuario. Se ejecuta cuando el equipo de análisis decide reentrenar (por ejemplo con más datos o nuevos parámetros), mediante `python scripts/run_train.py` o el notebook `poc/train.ipynb`. Usted solo debe ejecutar **ETL** (si hay datos nuevos) e **inferencia** cada mes, después de actualizar **inference.cutoff** en `config/config.yaml`.
 
 ---
 

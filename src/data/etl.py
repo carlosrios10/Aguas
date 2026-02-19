@@ -1,15 +1,18 @@
 """
 ETL mensual: inspecciones y consumo.
 Procesamiento incremental: raw xlsx → interim parquet por año/mes.
-Adecuado para empresa con columnas: servicio_suscrito/fecha/clasificacion_resultado (inspecciones)
-y niu/fecha_mes/consumo (consumo).
+Adecuado para EMCALI: inspecciones (contrato, fecha, resultado) y consumo (contrato, ano/mes, consumo, funcion, causa, observacion).
 """
+import logging
 import os
 import re
 import glob
 import unicodedata
+import numpy as np
 import pandas as pd
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 
 def normalizar_cadena(texto):
@@ -66,71 +69,120 @@ def get_pending_months(raw_dir, interim_dir, source_name):
 
 def clean_inspecciones(df):
     """
-    Limpieza específica para inspecciones.
-    Espera columnas: servicio_suscrito (→ contrato), fecha (%Y%m), clasificacion_resultado (→ is_fraud).
+    Limpieza para inspecciones (EMCALI).
+    Se asume columnas: contrato, fecha, resultado (y opcional observacion).
+    - contrato: string, se toma la parte antes del '.' si existe; luego int.
+    - fecha: datetime (dayfirst=True) → date (primer día del mes).
+    - is_fraud: 1 si resultado == 1, sino 0.
+    - Desduplicación por (contrato, date) quedándose con is_fraud máximo.
     """
     df = df.copy()
     df.columns = [normalizar_cadena(c) for c in df.columns]
 
-    df = df.rename(columns={"servicio_suscrito": "contrato"})
-    df["contrato"] = df["contrato"].astype(str).str.strip()
-    df = df[df["contrato"].str.len() == 9].copy()
+    df["contrato"] = df["contrato"].astype(str).str.strip().str.split(".").str[0]
+    df = df[df["contrato"].str.len() > 0].copy()
     df = df.dropna(subset=["contrato"]).reset_index(drop=True)
 
-    df["fecha"] = pd.to_datetime(df["fecha"], format="%Y%m", errors="coerce")
-    df = df.dropna(subset=["fecha"]).copy()
+    df["date"] = pd.to_datetime(df["fecha"], errors="coerce", dayfirst=True)
+    df = df.dropna(subset=["date"]).copy()
 
-    df = df[df["clasificacion_resultado"] != "Sin definición"].reset_index(drop=True)
-    df["is_fraud"] = df["clasificacion_resultado"].isin(["Fraude", "Anomalía"]).astype(int)
-
-    df["month"] = df["fecha"].dt.month
-    df["year"] = df["fecha"].dt.year
+    # Normalizar a primer día del mes
+    df["month"] = df["date"].dt.month
+    df["year"] = df["date"].dt.year
     df["date"] = pd.to_datetime(
         df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01"
     )
 
+    # resultado puede venir como float (1.0, 0.0)
+    df["is_fraud"] = (df["resultado"].astype(float).fillna(-1) == 1).astype(int)
+
+    # Una fila por (contrato, date): la de mayor is_fraud
     df = df.loc[df.groupby(["contrato", "date"])["is_fraud"].idxmax()].reset_index(drop=True)
-    if "solicitud" in df.columns:
-        df["solicitud"] = df["solicitud"].astype(str)
+
+    # Contrato como int (como en el notebook EMCALI)
+    df["contrato"] = df["contrato"].astype(int)
+
+    df["observacion"] = df["observacion"].astype(str)
     return df
 
 
 def clean_consumo(df):
     """
-    Limpieza específica para consumo.
-    Espera columnas: niu (→ contrato), fecha_mes (%Y%m), consumo.
+    Limpieza para consumo (EMCALI). Procesa un mes de datos.
+    Se asume columnas: contrato, ano, mes, consumo, funcion, causa, observacion.
+    Lógica alineada con notebook 2_Contruccion_dataset_v3.
     """
     df = df.copy()
     df.columns = [normalizar_cadena(c) for c in df.columns]
 
-    df = df.rename(columns={"niu": "contrato"})
     df["contrato"] = df["contrato"].astype(str).str.strip()
-    if "instalacion" in df.columns:
-        df["instalacion"] = df["instalacion"].astype(str).str.strip()
-    if "subcategoria_estrato" in df.columns:
-        df["subcategoria_estrato"] = df["subcategoria_estrato"].astype(str).str.strip()
+    df = df[df["contrato"].str.len() > 0].dropna(subset=["contrato"]).reset_index(drop=True)
 
-    df["fecha_mes"] = pd.to_datetime(df["fecha_mes"], format="%Y%m", errors="coerce")
-    df = df.dropna(subset=["fecha_mes"]).copy()
-    df["month"] = df["fecha_mes"].dt.month
-    df["year"] = df["fecha_mes"].dt.year
+    df["month"] = pd.to_numeric(df["mes"], errors="coerce").fillna(0).astype(int)
+    df["year"] = pd.to_numeric(df["ano"], errors="coerce").fillna(0).astype(int)
     df["date"] = pd.to_datetime(
-        df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01"
+        df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01",
+        errors="coerce",
     )
-    df = df.dropna(subset=["contrato"]).reset_index(drop=True)
+    df = df.dropna(subset=["date"]).reset_index(drop=True)
 
-    df["consumo"] = df["consumo"].apply(lambda x: None if pd.isna(x) or x < 0 else x)
+    # Consumo: si viene como string con coma (ej. "30,5"), tomar parte entera
+    if df["consumo"].dtype == object or (hasattr(df["consumo"].dtype, "name") and df["consumo"].dtype.name == "string"):
+        df["consumo"] = df["consumo"].astype(str).str.split(",").str[0]
+    df["consumo"] = pd.to_numeric(df["consumo"], errors="coerce")
+    df = df[df["consumo"] >= 0].copy()
+    df["consumo"] = df["consumo"].fillna(0).astype(int)
 
-    if "localidad" in df.columns:
-        df["localidad"] = df["localidad"].astype(str).str.strip()
-    if "municipio" in df.columns:
-        df["municipio"] = df["municipio"].astype(str).str.strip()
-    if "barrio" in df.columns:
-        df["barrio"] = df["barrio"].fillna("sin_dato").astype(str).str.strip()
-    if "determinacion_consumo" in df.columns:
-        df["determinacion_consumo"] = df["determinacion_consumo"].astype(str).str.strip()
+    df["causa"] = df["causa"].fillna(0).astype(int)
+    df["observacion"] = df["observacion"].fillna(0).astype(int)
+    df["funcion"] = df["funcion"].astype(str).str.strip().fillna("")
 
+    # Ordenar y una fila por (contrato, date), como en el notebook
+    df = df.sort_values(by=["contrato", "year", "month", "funcion", "consumo"], ascending=[True, True, True, False, False], na_position="last")
+    df = df.drop_duplicates(subset=["contrato", "date"], keep="first").reset_index(drop=True)
+
+    df["contrato"] = df["contrato"].astype(int)
     df = df.sort_values("date").reset_index(drop=True)
+    return df
+
+
+def _to_str_normalized(serie):
+    """
+    Convierte a string; preserva NaN. Si el valor es numérico entero (ej. 14.0), devuelve '14'.
+    """
+    out = pd.Series(index=serie.index, dtype=object)
+    mask_na = serie.isna()
+    num = pd.to_numeric(serie, errors="coerce")
+    mask_whole = num.notna() & (num % 1 == 0)
+
+    out.loc[mask_whole] = num.loc[mask_whole].astype(int).astype(str)
+    rest = ~mask_whole & ~mask_na
+    out.loc[rest] = serie.loc[rest].astype(str).str.strip().values
+    out.loc[mask_na] = np.nan
+    return out
+
+
+def clean_maestro(df):
+    """
+    Limpieza para maestro (EMCALI). Una foto contrato → atributos.
+    Se asume que el Excel trae: contrato, categoria, diametro, estrato, barrio_comuna, ciclo, localidad, medidor.
+    """
+    df = df.copy()
+    df.columns = [normalizar_cadena(c) for c in df.columns]
+
+    df["contrato"] = df["contrato"].astype(str).str.strip()
+    df = df[df["contrato"].str.len() > 0].dropna(subset=["contrato"]).reset_index(drop=True)
+    df["contrato"] = df["contrato"].astype(int)
+
+    df["categoria"] = _to_str_normalized(df["categoria"]).fillna("sin_dato")
+    df["estrato"] = _to_str_normalized(df["estrato"]).fillna("sin_dato")
+    df["barrio_comuna"] = _to_str_normalized(df["barrio_comuna"]).fillna("sin_dato")
+    df["ciclo"] = _to_str_normalized(df["ciclo"]).fillna("sin_dato")
+    df["localidad"] = _to_str_normalized(df["localidad"]).fillna("sin_dato")
+    df["diametro"] = pd.to_numeric(df["diametro"], errors="coerce")
+    df["medidor"] = _to_str_normalized(df["medidor"]).fillna("sin_dato")
+
+    df = df.drop_duplicates(subset=["contrato"], keep="last").reset_index(drop=True)
     return df
 
 
@@ -155,21 +207,21 @@ def process_month(raw_dir, interim_dir, source_name, year, month, clean_func, ov
     output_file = os.path.join(output_dir, f"{source_name}.parquet")
 
     if os.path.exists(output_file) and not overwrite:
-        print(f"  [SKIP] {source_name} {year}-{month:02d} ya procesado, saltando...")
+        logger.info("%s %s-%s ya procesado, saltando.", source_name, year, month)
         return False
 
     if not os.path.exists(raw_file):
-        print(f"  [WARN] {raw_file} no existe, saltando...")
+        logger.warning("%s no existe, saltando.", raw_file)
         return False
 
-    print(f"  [PROC] Procesando {source_name} {year}-{month:02d}...")
+    logger.info("Procesando %s %s-%s...", source_name, year, month)
     df = pd.read_excel(raw_file)
     df = clean_func(df)
 
     os.makedirs(output_dir, exist_ok=True)
     df.to_parquet(output_file, index=False)
 
-    print(f"  [OK] Guardado: {output_file} ({len(df)} registros)")
+    logger.info("Guardado: %s (%s registros)", output_file, len(df))
     return True
 
 
@@ -191,37 +243,38 @@ def run_monthly_etl(raw_dir="../../data/raw",
     """
     clean_funcs = {
         "inspecciones": clean_inspecciones,
-        "consumo": clean_consumo
+        "consumo": clean_consumo,
+        "maestro": clean_maestro,
     }
 
     summary = {}
 
     for source in sources:
-        print(f"\n{'='*60}")
-        print(f"[{source.upper()}]")
-        print(f"{'='*60}")
+        logger.info("=" * 60)
+        logger.info("[%s]", source.upper())
+        logger.info("=" * 60)
 
         if source not in clean_funcs:
-            print(f"  [WARN] Funcion de limpieza no definida para '{source}', saltando...")
+            logger.warning("Función de limpieza no definida para '%s', saltando.", source)
             continue
 
         raw_source_dir = os.path.join(raw_dir, source)
         if not os.path.exists(raw_source_dir):
-            print(f"  [WARN] Directorio {raw_source_dir} no existe, saltando...")
+            logger.warning("Directorio %s no existe, saltando.", raw_source_dir)
             continue
 
         pending = get_pending_months(raw_source_dir, interim_dir, source)
 
         if not pending:
-            print(f"  [OK] No hay meses pendientes")
+            logger.info("No hay meses pendientes.")
             summary[source] = {"processed": 0, "skipped": 0, "total_pending": 0}
             continue
 
-        print(f"  [INFO] {len(pending)} meses pendientes")
-        if len(pending) <= 10:
-            print(f"     {pending}")
-        else:
-            print(f"     {pending[:5]} ... {pending[-5:]}")
+        logger.info(
+            "%s meses pendientes: %s",
+            len(pending),
+            pending if len(pending) <= 10 else f"{pending[:5]} ... {pending[-5:]}",
+        )
 
         processed_count = 0
         skipped_count = 0
@@ -241,6 +294,6 @@ def run_monthly_etl(raw_dir="../../data/raw",
             "skipped": skipped_count,
             "total_pending": len(pending)
         }
-        print(f"  [OK] {source}: {processed_count} procesados, {skipped_count} saltados")
+        logger.info("%s: %s procesados, %s saltados", source, processed_count, skipped_count)
 
     return summary

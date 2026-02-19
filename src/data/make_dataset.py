@@ -3,6 +3,7 @@ Construcción de dataset wide y features de consumo.
 Carga desde interim, construcción wide por fecha de corte, ingeniería de variables.
 Usado por poc/train, poc/inference y notebooks de desarrollo.
 """
+import logging
 import os
 import re
 import glob
@@ -13,6 +14,8 @@ import tsfel
 from tqdm import tqdm
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
+
+logger = logging.getLogger(__name__)
 
 
 class TsfelVars(BaseEstimator, TransformerMixin):
@@ -203,14 +206,27 @@ def compute_tsfel_consumption_vars(df, cant_periodos):
 # Carga desde interim y construcción del dataset wide
 # ---------------------------------------------------------------------------
 
-VARS_FOR_ORDENES = [
-    "contrato", "date", "is_fraud", "solicitud", "instalacion", "resultado",
-    "clasificacion_resultado", "causa_de_revision",
-]
-VARS_FOR_CONSUMO = [
-    "contrato", "instalacion", "estado", "categoria", "subcategoria_estrato",
-    "localidad", "municipio", "barrio", "microsector",
-]
+# EMCALI: alineado con notebook 2_Contruccion_dataset_v3
+VARS_FOR_ORDENES = ["contrato", "date", "is_fraud"]
+VARS_FOR_CONSUMO = ["contrato", "funcion", "causa", "observacion", "categoria"]
+# Columnas de maestro para join al wide (notebook: vars_maestro; ETL normaliza "barrio comuna" → barrio_comuna)
+VARS_MAESTRO = ["contrato", "diametro", "estrato", "barrio_comuna", "ciclo", "localidad", "medidor"]
+
+# EMCALI: códigos para flags funcion/observacion/causa (notebook 2_Contruccion_dataset_v3)
+FUNC_NORMALES = ["CDLE", "CDAC"]
+FUNC_IMPUTACIONES = ["CP3M", "CP6M", "CPSC", "CANT"]
+FUNC_MANUALES = ["CAMA", "CAAS", "CAFOR"]
+FUNC_RECUPERACIONES = ["CREC", "RECA", "CRAC", "AREC"]
+OBS_FRAUDE = {29, 74, 88}
+OBS_MEDIDOR = {12, 14, 23, 24, 25, 26, 56, 62, 63, 72}
+OBS_IMPEDIMENTO = {43, 64, 65, 61}
+OBS_ADMIN = {7, 40, 45, 66, 70}
+SIN_OBS = {-1, 0, 3}
+CAUSAS_FRAUDE = {46, 34, 47, 77}
+CAUSAS_MEDIDOR = {12, 13, 14, 16, 20, 21, 23, 24, 25, 26, 27, 56, 79, 80, 89, 90}
+CAUSAS_ADMIN = {7, 8, 9, 10, 11, 31, 36, 37, 45, 48, 67, 71, 75, 58}
+CAUSAS_RIESGO = {15, 22, 77, 96}
+CAUSAS_SIN = {-1, 0, 1}
 
 CONFIG_CAIDAS = [(1, 4, 90), (1, 3, 90), (2, 3, 90), (1, 6, 90), (3, 3, 90), (6, 5, 10), (6, 6, 10), (6, 4, 10), (6, 1, 10), (5, 5, 10)]
 CONFIG_CONSTANTES = [8, 9, 10, 3, 4, 5]
@@ -275,6 +291,56 @@ def get_consumo_date_range(interim_dir):
     return min(fechas), max(fechas)
 
 
+def load_maestro_latest(interim_dir):
+    """
+    Carga el maestro más reciente desde interim/maestro/ (partición year/month más reciente).
+    Retorna DataFrame con al menos contrato, categoria; vacío si no hay archivos.
+    """
+    pattern = os.path.join(interim_dir, "maestro", "year=*", "month=*", "maestro.parquet")
+    files = glob.glob(pattern)
+    if not files:
+        return pd.DataFrame()
+    best = None
+    best_ym = (-1, -1)
+    for f in files:
+        match = re.search(r"year=(\d{4})/month=(\d{2})", f.replace("\\", "/"))
+        if match:
+            y, m = int(match.group(1)), int(match.group(2))
+            if (y, m) > best_ym:
+                best_ym = (y, m)
+                best = f
+    if best is None:
+        return pd.DataFrame()
+    return pd.read_parquet(best)
+
+
+def add_consumo_flags(df):
+    """
+    Añade columnas *_flag_* al DataFrame de consumo (EMCALI). Modifica in-place.
+    Códigos hardcodeados según notebook 2_Contruccion_dataset_v3.
+    """
+    if df.empty:
+        return df
+    if "funcion" in df.columns:
+        df["func_flag_normales"] = df["funcion"].isin(FUNC_NORMALES).astype("uint8")
+        df["func_flag_imput"] = df["funcion"].isin(FUNC_IMPUTACIONES).astype("uint8")
+        df["func_flag_manu"] = df["funcion"].isin(FUNC_MANUALES).astype("uint8")
+        df["func_flag_recu"] = df["funcion"].isin(FUNC_RECUPERACIONES).astype("uint8")
+    if "observacion" in df.columns:
+        df["obs_flag_fraude"] = df["observacion"].isin(OBS_FRAUDE).astype("uint8")
+        df["obs_flag_medidor"] = df["observacion"].isin(OBS_MEDIDOR).astype("uint8")
+        df["obs_flag_impedimento"] = df["observacion"].isin(OBS_IMPEDIMENTO).astype("uint8")
+        df["obs_flag_admin"] = df["observacion"].isin(OBS_ADMIN).astype("uint8")
+        df["obs_flag_sin"] = df["observacion"].isin(SIN_OBS).astype("uint8")
+    if "causa" in df.columns:
+        df["causa_flag_fraude"] = df["causa"].isin(CAUSAS_FRAUDE).astype("uint8")
+        df["causa_flag_medidor"] = df["causa"].isin(CAUSAS_MEDIDOR).astype("uint8")
+        df["causa_flag_admin"] = df["causa"].isin(CAUSAS_ADMIN).astype("uint8")
+        df["causa_flag_riesgo"] = df["causa"].isin(CAUSAS_RIESGO).astype("uint8")
+        df["causa_flag_sin"] = df["causa"].isin(CAUSAS_SIN).astype("uint8")
+    return df
+
+
 def get_fecha_fraud_list(df_ordenes, df_consumo=None, cant_periodos=12, cutoff_max=None, min_date_consumo=None):
     """
     Fechas de corte válidas: con inspecciones y al menos cant_periodos meses de consumo previo.
@@ -297,23 +363,18 @@ def get_fecha_fraud_list(df_ordenes, df_consumo=None, cant_periodos=12, cutoff_m
 
 def create_dataset_wide_for_cutoff(fecha_fraud, df_consumo, df_ordenes, cant_periodos, vars_ordenes, vars_consumo, mode="train", max_ctas=None):
     """
-    Construye el dataset en formato wide para una fecha de corte.
-    mode: 'train' -> solo contratos inspeccionados ese mes, se une target.
-          'inference' -> contratos con consumo en la ventana, sin target.
-    max_ctas: en mode='train', cantidad máxima de cuentas sin orden a añadir por cutoff (casos negativos).
-              Si None, no se añaden. Esas filas tendrán is_fraud=0 y el resto de columnas de órdenes en null.
-    Las proporciones (prop_cons_ult*) se calculan con estadísticas de toda la población
-    en la ventana [date_inicial, fecha_fraud), no solo con las cuentas con órdenes.
+    Construye el dataset wide para una fecha de corte (EMCALI, alineado con notebook 2_Contruccion_dataset_v3).
+    df_consumo debe traer ya categoria (merge con maestro hecho antes).
+    mode: 'train' -> contratos inspeccionados ese mes + opcional max_ctas negativos; se une is_fraud.
     """
     fecha_fraud = pd.to_datetime(fecha_fraud)
     date_inicial = fecha_fraud - pd.DateOffset(months=cant_periodos)
 
-    # Ventana de consumo: toda la población (para estadísticas globales por categoría)
     df_consumo_ventana = df_consumo[
         (df_consumo["date"] < fecha_fraud) & (df_consumo["date"] >= date_inicial)
     ].copy()
 
-    # Consumo por grupo (categoria): 12m, 6m, 3m sobre toda la población de la ventana
+    # Estadísticas por categoria (12m, 6m, 3m) sobre toda la ventana
     consumo_anual = (
         df_consumo_ventana.groupby(["categoria", "contrato"])["consumo"].sum().groupby(level=0).agg(["mean", "max"])
     )
@@ -332,7 +393,6 @@ def create_dataset_wide_for_cutoff(fecha_fraud, df_consumo, df_ordenes, cant_per
     consumo_3m.columns = ["consumo_3m_ts_mean", "consumo_3m_ts_max"]
     df_consumo_g = pd.concat([consumo_anual, consumo_6m, consumo_3m], axis=1).reset_index()
 
-    # Cortar por cuentas con órdenes (train) y opcionalmente añadir negativos (max_ctas)
     df_etiquetado = df_consumo_ventana.copy()
     if mode == "train":
         ctas = df_ordenes[df_ordenes["date"] == fecha_fraud]["contrato"].unique().tolist()
@@ -352,17 +412,23 @@ def create_dataset_wide_for_cutoff(fecha_fraud, df_consumo, df_ordenes, cant_per
     if df_etiquetado.empty:
         return pd.DataFrame()
 
-    agg_cols = ["categoria", "estado", "determinacion_consumo"]
+    # EMCALI: funcion, causa, observacion (cant y cambios)
+    agg_cols = ["funcion", "causa", "observacion"]
     df_static_vars = df_etiquetado.loc[df_etiquetado.groupby("contrato")["date"].idxmax()]
 
-    df_cant = (
-        df_etiquetado.groupby("contrato")[agg_cols].nunique().reset_index()
-    )
+    df_cant = df_etiquetado.groupby("contrato")[agg_cols].nunique().reset_index()
     df_cant = df_cant.rename(columns={
-        "categoria": "cant_categoria",
-        "estado": "cant_estado",
-        "determinacion_consumo": "cant_determinacion_consumo",
+        "funcion": "cant_funciones",
+        "causa": "cant_causa",
+        "observacion": "cant_observacion",
     })
+
+    # Medias de flags por contrato (notebook: mean_func_flag_*, mean_obs_flag_*, mean_causa_flag_*)
+    flag_cols = [c for c in df_etiquetado.columns if c.startswith("func_flag_") or c.startswith("obs_flag_") or c.startswith("causa_flag_")]
+    if flag_cols:
+        df_flag_means = df_etiquetado.groupby("contrato")[flag_cols].mean().reset_index()
+        df_flag_means = df_flag_means.rename(columns={c: "mean_" + c for c in flag_cols})
+        df_cant = df_cant.merge(df_flag_means, on="contrato")
 
     def _cambios(s):
         return (s.dropna() != s.dropna().shift()).sum() - 1
@@ -373,12 +439,14 @@ def create_dataset_wide_for_cutoff(fecha_fraud, df_consumo, df_ordenes, cant_per
         .reset_index()
     )
     df_cambios = df_cambios.rename(columns={
-        "categoria": "cambios_categoria",
-        "estado": "cambios_estado",
-        "determinacion_consumo": "cambios_determinacion_consumo",
+        "funcion": "cambios_funciones",
+        "causa": "cambios_causa",
+        "observacion": "cambios_observacion",
     })
     df_cant = df_cant.merge(df_cambios, on="contrato")
-    df_cant = df_cant.merge(df_static_vars[vars_consumo], on="contrato")
+    vars_consumo_exist = [c for c in vars_consumo if c in df_static_vars.columns]
+    if vars_consumo_exist:
+        df_cant = df_cant.merge(df_static_vars[vars_consumo_exist], on="contrato")
 
     rango_fechas = pd.date_range(start=date_inicial, end=fecha_fraud, freq="MS", inclusive="left")
     cols_ant = [str(x) + "_anterior" for x in range(cant_periodos, 0, -1)]
@@ -390,8 +458,6 @@ def create_dataset_wide_for_cutoff(fecha_fraud, df_consumo, df_ordenes, cant_per
     df_wide = df_wide.merge(df_consumo_g, on="categoria", how="left")
 
     df_wide["cant_null"] = df_wide[cols_ant].isnull().sum(axis=1)
-
-    # Proporciones (después del corte por date_inicial): uso de estadísticas de toda la población
     eps = 1e-9
     cols_3 = [str(x) + "_anterior" for x in range(3, 0, -1)]
     df_wide["prop_cons_ult3_mean_g"] = df_wide[cols_3].mean(axis=1) / (df_wide["consumo_3m_ts_mean"] + eps)
@@ -421,31 +487,39 @@ def create_dataset_wide_for_cutoff(fecha_fraud, df_consumo, df_ordenes, cant_per
 
 def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_max=None, max_ctas=None):
     """
-    Carga inspecciones desde interim y, por cada fecha de corte, solo la ventana de consumo necesaria
-    (cant_periodos meses), construye dataset wide, aplica ingeniería de variables y guarda en
-    processed/train/cutoff=<cutoff_max>/.
+    Carga inspecciones y maestro (más reciente) desde interim; por cada fecha de corte carga ventana
+    de consumo, une categoria desde maestro, construye dataset wide (EMCALI) y guarda en processed/train/.
     max_ctas: cantidad máxima de cuentas sin orden a añadir por cutoff (casos negativos). Si None, no se añaden.
     """
     df_ordenes = load_interim_data(interim_dir, "inspecciones")
     if df_ordenes.empty:
-        print("[WARN] No hay datos en interim para inspecciones.")
+        logger.warning("No hay datos en interim para inspecciones.")
         return None
 
     min_date_consumo, _ = get_consumo_date_range(interim_dir)
     if min_date_consumo is None:
-        print("[WARN] No hay archivos de consumo en interim.")
+        logger.warning("No hay archivos de consumo en interim.")
         return None
 
+    df_maestro = load_maestro_latest(interim_dir)
+    if df_maestro.empty:
+        logger.error("No hay maestro en interim. El maestro es una fuente obligatoria; ejecute el ETL para maestro.")
+        return None
+    if "categoria" not in df_maestro.columns:
+        logger.error("Maestro sin columna 'categoria'. La fuente maestro debe incluir contrato y categoria.")
+        return None
+
+    logger.info("Maestro cargado (%s contratos). Inspecciones cargadas.", len(df_maestro))
     fecha_list = get_fecha_fraud_list(
         df_ordenes, df_consumo=None, cant_periodos=cant_periodos,
         cutoff_max=cutoff_max, min_date_consumo=min_date_consumo
     )
     if not fecha_list:
-        print("[WARN] No hay fechas de corte válidas.")
+        logger.warning("No hay fechas de corte válidas.")
         return None
 
     if cutoff_max is None:
-        print("[INFO] Se procesarán todas las inspecciones que estén en la carpeta (sin límite de fecha).")
+        logger.info("Se procesarán todas las inspecciones que estén en la carpeta (sin límite de fecha).")
 
     list_df = []
     for fecha_fraud in tqdm(fecha_list, desc="Train dataset"):
@@ -454,6 +528,13 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
         df_consumo_ventana = load_interim_data(
             interim_dir, "consumo", start_date=date_inicial, end_date=fecha_d
         )
+        if not df_consumo_ventana.empty:
+            df_consumo_ventana = df_consumo_ventana.merge(
+                df_maestro[["contrato", "categoria"]], on="contrato", how="left"
+            )
+            df_consumo_ventana["categoria"] = df_consumo_ventana["categoria"].fillna("sin_dato")
+            add_consumo_flags(df_consumo_ventana)
+
         df_one = create_dataset_wide_for_cutoff(
             fecha_fraud, df_consumo_ventana, df_ordenes, cant_periodos,
             VARS_FOR_ORDENES, VARS_FOR_CONSUMO, mode="train", max_ctas=max_ctas
@@ -466,27 +547,34 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
     df_wide = pd.concat(list_df, axis=0, ignore_index=True)
     df_wide["date_fizcalizacion"] = pd.to_datetime(df_wide["date_fizcalizacion"])
 
+    # Join columnas de maestro al wide (como en notebook: df_etiquetado_wide.merge(df_maestro[vars_maestro], on='contrato'))
+    cols_maestro = [c for c in VARS_MAESTRO if c in df_maestro.columns]
+    if cols_maestro:
+        df_wide = df_wide.merge(df_maestro[cols_maestro], on="contrato", how="left")
+
     df_wide.reset_index(drop=True, inplace=True)
+    logger.info("Calculando variables de series de tiempo (tsfel); puede tardar varios minutos...")
     df_wide = llenar_val_vacios_ciclo(df_wide, cant_periodos)
     df_wide = compute_change_trend_percentaje_vars(df_wide, CONFIG_CAIDAS)
     df_wide = compute_constant_consumption_vars(df_wide, CONFIG_CONSTANTES)
     df_wide.reset_index(drop=True, inplace=True)
     df_wide["index"] = range(len(df_wide))
     df_wide = compute_tsfel_consumption_vars(df_wide, cant_periodos)
-    df_wide.solicitud = df_wide.solicitud.astype(str)
-    
+
     out_dir = os.path.join(processed_dir, "train", f"cutoff={pd.to_datetime(cutoff_max or fecha_list[-1]).strftime('%Y-%m-%d')}")
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, "train_wide.parquet")
     df_wide.to_parquet(out_file, index=False)
-    print(f"[OK] Guardado: {out_file} ({len(df_wide)} filas)")
+    logger.info("Dataset de train guardado: %s (%s filas).", out_file, len(df_wide))
     return df_wide
 
 
-def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=12, contratos_list=None):
+def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=12, contratos_list=None, columns_filter=None):
     """
     Construye dataset wide para una fecha de corte sin target (para scoring).
-    Solo carga meses en [cutoff - cant_periodos, cutoff] desde interim.
+    Carga consumo y maestro desde interim; une categoria y flags (EMCALI), construye wide
+    y une columnas de maestro (diametro, estrato, etc.). Opcionalmente filtra por
+    columns_filter (dict columna -> lista de valores) antes de tsfel; luego reset_index.
     cutoff debe ser no nulo y tener formato de fecha válido (ej. YYYY-MM-DD).
     """
     if cutoff is None or (isinstance(cutoff, str) and not cutoff.strip()):
@@ -507,17 +595,32 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     start_d, end_d = get_date_range_for_cutoff(cutoff, cant_periodos)
     df_consumo = load_interim_data(interim_dir, "consumo", start_date=start_d, end_date=end_d)
     if df_consumo.empty:
-        print("[WARN] No hay consumo en interim.")
+        logger.warning("No hay consumo en interim.")
         return None
 
     meses_cargados = df_consumo["date"].dt.to_period("M").nunique()
     if meses_cargados < cant_periodos:
-        print(
-            f"[WARN] Se requieren {cant_periodos} meses de consumo en el rango "
-            f"[{start_d.strftime('%Y-%m-%d')}, {end_d.strftime('%Y-%m-%d')}], "
-            f"pero solo hay {meses_cargados} meses en interim. Ejecute el ETL para los meses faltantes."
+        logger.warning(
+            "Se requieren %s meses de consumo en el rango [%s, %s], pero solo hay %s meses en interim. Ejecute el ETL para los meses faltantes.",
+            cant_periodos, start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d"), meses_cargados,
         )
         return None
+
+    logger.info("Cargados %s meses de consumo para la ventana del cutoff.", meses_cargados)
+    df_maestro = load_maestro_latest(interim_dir)
+    if df_maestro.empty:
+        logger.error("No hay maestro en interim. El maestro es obligatorio para inferencia; ejecute el ETL para maestro.")
+        return None
+    if "categoria" not in df_maestro.columns:
+        logger.error("Maestro sin columna 'categoria'. La fuente maestro debe incluir contrato y categoria.")
+        return None
+    logger.info("Maestro cargado (%s contratos).", len(df_maestro))
+
+    df_consumo = df_consumo.merge(
+        df_maestro[["contrato", "categoria"]], on="contrato", how="left"
+    )
+    df_consumo["categoria"] = df_consumo["categoria"].fillna("sin_dato")
+    add_consumo_flags(df_consumo)
 
     df_wide = create_dataset_wide_for_cutoff(
         cutoff, df_consumo, pd.DataFrame(), cant_periodos,
@@ -527,7 +630,26 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     if df_wide.empty:
         return None
 
+    cols_maestro = [c for c in VARS_MAESTRO if c in df_maestro.columns]
+    if cols_maestro:
+        df_wide = df_wide.merge(df_maestro[cols_maestro], on="contrato", how="left")
+
+    # Filtrar por columnas del dataset (antes de tsfel, que es costoso)
+    if columns_filter and isinstance(columns_filter, dict):
+        for col, valores in columns_filter.items():
+            if col not in df_wide.columns:
+                continue
+            vals = [str(v).strip() for v in (valores if isinstance(valores, list) else [valores])]
+            df_wide = df_wide[df_wide[col].astype(str).str.strip().isin(vals)]
+        if df_wide.empty:
+            logger.warning("Dataset de inferencia quedó vacío tras aplicar columns_filter.")
+            return None
+        logger.info("Filtro aplicado: %s contratos tras filtrar por %s.", len(df_wide), list(columns_filter.keys()))
+    if contratos_list is not None:
+        df_wide = df_wide[df_wide["contrato"].isin(contratos_list)]
+
     df_wide.reset_index(drop=True, inplace=True)
+    logger.info("Calculando variables de series de tiempo (tsfel); puede tardar varios minutos...")
     df_wide = llenar_val_vacios_ciclo(df_wide, cant_periodos)
     df_wide = compute_change_trend_percentaje_vars(df_wide, CONFIG_CAIDAS)
     df_wide = compute_constant_consumption_vars(df_wide, CONFIG_CONSTANTES)
@@ -535,12 +657,9 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     df_wide["index"] = range(len(df_wide))
     df_wide = compute_tsfel_consumption_vars(df_wide, cant_periodos)
 
-    if contratos_list is not None:
-        df_wide = df_wide[df_wide["contrato"].isin(contratos_list)]
-
     out_dir = os.path.join(processed_dir, "inference", f"cutoff={pd.to_datetime(cutoff).strftime('%Y-%m-%d')}")
     os.makedirs(out_dir, exist_ok=True)
     out_file = os.path.join(out_dir, "inference_wide.parquet")
     df_wide.to_parquet(out_file, index=False)
-    print(f"[OK] Guardado: {out_file} ({len(df_wide)} filas)")
+    logger.info("Dataset de inferencia guardado: %s (%s filas).", out_file, len(df_wide))
     return df_wide

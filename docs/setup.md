@@ -100,5 +100,6 @@ O, para probar el pipeline:
 
 Las carpetas `data/` y `models/` no se suben a Git. En una máquina nueva:
 
-- **data/:** Copiar desde la máquina original o generar ejecutando el ETL si tenés los archivos raw.
-- **models/:** Se crean al ejecutar `poc/3_train.ipynb`; si ya tenés un modelo, copiá los `.pkl` a `models/`.
+- **data/:** Copiar desde la máquina original o generar ejecutando el ETL si tenés los archivos raw (inspecciones, consumo, maestro en `data/raw/` según `config/config.yaml` → `etl.sources`).
+- **data/logs/:** Se crea automáticamente al ejecutar los scripts (`run_etl.py`, `run_inference.py`, `run_train.py`) si en la config está definido `paths.logs`. Contiene archivos de log por ejecución (por ejemplo `etl_*.log`, `inference_*.log`, `train_*.log`).
+- **models/:** Se crean al ejecutar el entrenamiento con `python scripts/run_train.py` o el notebook `poc/train.ipynb`; si ya tenés un modelo, copiá los `.pkl` (por ejemplo `lgbm_model.pkl`, `features.pkl`, `hyperparams.pkl`) a `models/`.

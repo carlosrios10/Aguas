@@ -29,21 +29,29 @@ def get_preprocesor(preprocesor):
     if preprocesor == -1:
         preprocessor = ColumnTransformer(transformers=[], remainder='passthrough')
     elif preprocesor == 1:
+        pipe_categoria = Pipeline([
+        ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
+        ('categoria_dummy',ToDummy(['categoria']))
+        ])
+        
         pipe_estrato = Pipeline([
-            ('cardinality_reducer', CardinalityReducer(threshold=0.05)),
-            ('te', TeEncoder(['subcategoria_estrato'], w=50))
+        ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
+        ('te',TeEncoder(['estrato'],w=50))
         ])
-        pipe_localidad = Pipeline([
-            ('cardinality_reducer', CardinalityReducer(threshold=0.005)),
-            ('te', TeEncoder(['localidad'], w=50))
+        pipe_medidor_2 = Pipeline([
+        ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
+        ('te',TeEncoder(['medidor_2'],w=50))
         ])
-        vars_dummy = ['categoria']
+        vars_enc = ["barrio_comuna"]
+        vars_dummy = ['localidad']
         t_features = [
-            ('dummy_var', ToDummy(vars_dummy), vars_dummy),
-            ('p_localidad', pipe_localidad, ['localidad']),
-            ('p_estrato', pipe_estrato, ['subcategoria_estrato']),
+        ('dummy_var', ToDummy(vars_dummy), vars_dummy),
+        ('enc_var', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), vars_enc),
+        ('p_categoria', pipe_categoria, ['categoria']),
+        ('p_estrato', pipe_estrato, ['estrato']),
+        ('p_pipe_medidor_2', pipe_medidor_2, ['medidor_2']),
         ]
-        preprocessor = ColumnTransformer(transformers=t_features, remainder='passthrough')
+        preprocessor = ColumnTransformer(transformers= t_features,remainder='passthrough')
     else:
         raise ValueError(
             f"preprocesor debe ser -1 o 1; recibido: {preprocesor}. "
