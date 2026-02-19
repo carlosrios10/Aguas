@@ -1,4 +1,4 @@
-# AR-EPM POC
+# EMCALI POC
 
 POC de pipeline de ML para detección de anomalías/fraude en consumo: ETL, construcción de dataset wide, entrenamiento con LightGBM e inferencia.
 
