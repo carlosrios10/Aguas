@@ -33,18 +33,20 @@ def normalizar_cadena(texto):
 # ETL MENSUAL - Funciones para procesamiento incremental por mes
 # ============================================================================
 
-def get_pending_months(raw_dir, interim_dir, source_name):
+def get_pending_months(raw_dir, interim_dir, source_name, overwrite=False):
     """
     Compara archivos en raw/ vs parquets en interim/
-    Retorna lista de (year, month) pendientes de procesar
+    Retorna lista de (year, month) pendientes de procesar.
+    Si overwrite=True, devuelve todos los meses de raw (no solo pendientes).
 
     Args:
         raw_dir: directorio con archivos raw de la fuente (ej: data/raw/inspecciones/)
         interim_dir: directorio base con parquets procesados (ej: data/interim/)
         source_name: nombre de la fuente (ej: 'inspecciones', 'consumo')
+        overwrite: si True, devuelve todos los meses de raw (reprocesar todo)
 
     Returns:
-        Lista de tuplas (year, month) pendientes
+        Lista de tuplas (year, month) pendientes (o todos si overwrite=True)
     """
     raw_files = glob.glob(os.path.join(raw_dir, f"{source_name}_*.xlsx"))
     raw_months = set()
@@ -54,6 +56,9 @@ def get_pending_months(raw_dir, interim_dir, source_name):
         match = re.search(rf"{source_name}_(\d{{4}})_(\d{{2}})\.xlsx", basename)
         if match:
             raw_months.add((int(match.group(1)), int(match.group(2))))
+
+    if overwrite:
+        return sorted(raw_months)
 
     processed_months = set()
     pattern = os.path.join(interim_dir, source_name, "year=*", "month=*", f"{source_name}.parquet")
@@ -165,14 +170,14 @@ def process_month(raw_dir, interim_dir, source_name, year, month, clean_func, ov
         logger.warning("  [WARN] %s no existe, saltando...", raw_file)
         return False
 
-    logger.info("  [PROC] Procesando %s %s-%02d...", source_name, year, month)
+    logger.debug("  [PROC] Procesando %s %s-%02d...", source_name, year, month)
     df = pd.read_excel(raw_file)
     df = clean_func(df)
 
     os.makedirs(output_dir, exist_ok=True)
     df.to_parquet(output_file, index=False)
 
-    logger.info("  [OK] Guardado: %s (%s registros)", output_file, len(df))
+    logger.debug("  [OK] Guardado: %s (%s registros)", output_file, len(df))
     return True
 
 
@@ -213,7 +218,7 @@ def run_monthly_etl(raw_dir="../../data/raw",
             logger.warning("  [WARN] Directorio %s no existe, saltando...", raw_source_dir)
             continue
 
-        pending = get_pending_months(raw_source_dir, interim_dir, source)
+        pending = get_pending_months(raw_source_dir, interim_dir, source, overwrite=overwrite)
 
         if not pending:
             logger.info("  [OK] No hay meses pendientes")

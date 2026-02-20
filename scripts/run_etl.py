@@ -109,13 +109,8 @@ def main():
         logger.info("RESUMEN")
         logger.info("=" * 60)
         for source, stats in summary.items():
-            logger.info(
-                "%s: Procesados=%s, saltados=%s, pendientes=%s",
-                source.upper(),
-                stats["processed"],
-                stats["skipped"],
-                stats["total_pending"],
-            )
+            logger.info("%s: Total=%s, procesados=%s, saltados=%s",
+                source.upper(), stats["total"], stats["processed"], stats["skipped"])
         logger.info("ETL completado.")
         return 0
     except Exception:
