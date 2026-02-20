@@ -1,6 +1,6 @@
 @echo off
-set PROYECTO=D:\2024\BID\Aguas\Empresa4-Cali\proyecto\emcali_poc
+set PROYECTO=D:\2024\BID\Aguas\Empresa2-Queretaro\proyecto\queretaro_poc
 cd /d "%PROYECTO%"
 call qenv\Scripts\activate.bat
-python scripts/run_train.py %*
+python -u scripts/run_train.py %*
 pause

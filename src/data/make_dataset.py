@@ -358,8 +358,11 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
     """
     df_ordenes = load_interim_data(interim_dir, "inspecciones")
     df_consumo = load_interim_data(interim_dir, "consumo")
-    if df_ordenes.empty or df_consumo.empty:
-        logger.warning("No hay datos en interim para inspecciones o consumo.")
+    if df_ordenes.empty:
+        logger.warning("Inspecciones vacías.")
+        return None
+    if df_consumo.empty:
+        logger.warning("Sin archivos de consumo en interim.")
         return None
 
     fecha_list = get_fecha_fraud_list(df_ordenes, df_consumo, cant_periodos, cutoff_max=cutoff_max)
@@ -424,6 +427,15 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     df_consumo = load_interim_data(interim_dir, "consumo", start_date=start_d, end_date=end_d)
     if df_consumo.empty:
         logger.warning("No hay consumo en interim.")
+        return None
+
+    n_meses = df_consumo["date"].dt.to_period("M").nunique()
+    if n_meses < cant_periodos:
+        logger.warning(
+            "Menos de %s meses de consumo en interim (hay %s). "
+            "Se requieren al menos %s meses para construir el dataset wide.",
+            cant_periodos, n_meses, cant_periodos
+        )
         return None
 
     df_wide = create_dataset_wide_for_cutoff(

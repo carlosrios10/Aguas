@@ -116,3 +116,12 @@ class MinMaxScalerRow(BaseEstimator, TransformerMixin):
     def transform(self, X):
         scaler = MinMaxScaler()
         return scaler.fit_transform(X.T).T
+
+
+def preprocess_model_input(df):
+    """
+    Preprocesamiento opcional del dataframe wide antes del modelo.
+    Usado por scripts/run_train.py y scripts/run_inference.py.
+    Por defecto devuelve una copia del dataframe sin modificar.
+    """
+    return df.copy()

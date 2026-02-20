@@ -2,7 +2,7 @@
 # ACTUALIZACIÓN MENSUAL: editar solo inference.cutoff (mes a predecir, YYYY-MM-DD)
 # =============================================================================
 inference:
-  cutoff: "2026-03-01"
+  cutoff: "2025-01-01"
   cant_periodos: 12
   contratos_list: null  # null = todos los contratos con consumo en la ventana
   columns_filter: null  # ej: { localidad: ["1","2"] } — null = sin filtro
@@ -28,7 +28,7 @@ etl:
 train:
   cutoff: null
   cant_periodos: 12
-  max_ctas_neg: 1500
+  max_ctas_neg: 0
   sam_th: 0.5
-  param_imb_method: "over"
-  preprocesor_num: 1
+  param_imb_method: "none"
+  preprocesor_num: 5
