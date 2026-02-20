@@ -108,7 +108,28 @@ Si el mensaje de error no le resulta claro, revise los archivos en **`data/logs/
 
 ---
 
-## 7. Entrenamiento del modelo (no es mensual)
+## 7. Ejecución alternativa: Notebooks
+
+Si prefiere ejecutar el proceso de forma **interactiva** (útil para inspeccionar resultados intermedios o depurar problemas), puede usar los notebooks ubicados en la carpeta `poc/`:
+
+| Notebook | Equivalente a | Descripción |
+|----------|---------------|-------------|
+| `poc/1_etl.ipynb` | `python scripts/run_etl.py` | Ejecuta el ETL celda a celda, mostrando archivos procesados y posibles advertencias. |
+| `poc/inference.ipynb` | `python scripts/run_inference.py` | Ejecuta la inferencia paso a paso; permite ver el dataset generado antes de calcular scores. |
+| `poc/train.ipynb` | `python scripts/run_train.py` | Entrena el modelo de forma interactiva (solo si necesita reentrenar). |
+
+**Cómo usarlos:**
+
+1. Abra el notebook en Jupyter, VS Code o su IDE preferido.
+2. Asegúrese de que el **kernel** usa el entorno virtual del proyecto (donde están instaladas las dependencias).
+3. Verifique que `config/config.yaml` tiene los parámetros correctos (especialmente `inference.cutoff`).
+4. Ejecute las celdas en orden (Run All o celda por celda).
+
+Los notebooks cargan la configuración desde `config/config.yaml`, igual que los scripts, por lo que no necesita duplicar parámetros.
+
+---
+
+## 8. Entrenamiento del modelo (no es mensual)
 
 El **entrenamiento** del modelo no forma parte del flujo mensual del usuario. Se ejecuta cuando el equipo de análisis decide reentrenar (por ejemplo con más datos o nuevos parámetros), mediante `python scripts/run_train.py` o el notebook `poc/train.ipynb`. Usted solo debe ejecutar **ETL** (si hay datos nuevos) e **inferencia** cada mes, después de actualizar **inference.cutoff** en `config/config.yaml`.
 
@@ -120,6 +141,6 @@ El **entrenamiento** del modelo no forma parte del flujo mensual del usuario. Se
 |-------------------|--------------|
 | 1. Indicar el mes a predecir | Editar `config/config.yaml` → `inference.cutoff` (formato "YYYY-MM-DD") |
 | 2. Cargar datos nuevos (si aplica) | Colocar archivos en `data/raw/inspecciones/` y `data/raw/consumo/` |
-| 3. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` |
-| 4. Ejecutar inferencia | `python scripts/run_inference.py` |
+| 3. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` (o `poc/1_etl.ipynb`) |
+| 4. Ejecutar inferencia | `python scripts/run_inference.py` (o `poc/inference.ipynb`) |
 | 5. Revisar resultados | Abrir `data/predictions/scores_<CUTOFF>.csv` |
