@@ -32,16 +32,36 @@ Antes de ejecutar la inferencia, debe editar el archivo de configuración para i
 2. Al inicio del archivo verá la sección **inference** y el parámetro **cutoff**.
 3. Cambie el valor de **cutoff** al mes que desea predecir, en formato **YYYY-MM-DD** (año-mes-día; el día puede ser 01).
 
-**Ejemplo:** Para predecir marzo de 2026:
+**Ejemplo:** Para predecir junio de 2025:
 
 ```yaml
 inference:
-  cutoff: "2026-03-01"
+  cutoff: "2025-06-01"
+  cant_periodos: 12
+  contratos_list: null
+  columns_filter: null
 ```
 
 - Use siempre comillas alrededor de la fecha.
-- El formato debe ser exactamente **YYYY-MM-DD** (por ejemplo `"2026-04-01"` para abril de 2026).
+- El formato debe ser exactamente **YYYY-MM-DD** (por ejemplo `"2025-06-01"` para junio de 2025).
 - No modifique el resto del archivo a menos que le indiquen lo contrario.
+
+### Parámetro opcional: columns_filter (filtrar por categoría, ciclo, etc.)
+
+Si desea procesar solo un subconjunto de contratos (por ejemplo, solo categoría "Industrial" o solo ciertos ciclos), puede usar **columns_filter**:
+
+```yaml
+inference:
+  cutoff: "2025-06-01"
+  columns_filter:
+    categoria: ["Industrial"]
+```
+
+- **columns_filter: null** → procesa todos los contratos con consumo en la ventana (comportamiento por defecto).
+- **columns_filter: { categoria: ["Industrial"] }** → solo contratos de categoría Industrial.
+- **columns_filter: { ciclo: ["14", "15"] }** → solo contratos de ciclos 14 y 15.
+
+Este filtro se aplica antes de calcular las variables de series de tiempo, lo que acelera el proceso si solo necesita un segmento.
 
 ---
 
@@ -83,11 +103,40 @@ Al finalizar la inferencia sin errores, el archivo de resultados se guarda en:
 
 **`data/predictions/scores_<CUTOFF>.csv`**
 
-Donde `<CUTOFF>` es la fecha que puso en `inference.cutoff` (por ejemplo `scores_2026-03-01.csv`). Ese CSV contiene, por contrato, el puntaje de riesgo (probabilidad de fraude/anomalía) según el modelo.
+Donde `<CUTOFF>` es la fecha que puso en `inference.cutoff` (por ejemplo `scores_2025-06-01.csv`). Ese CSV contiene, por contrato, el puntaje de riesgo (probabilidad de fraude/anomalía) según el modelo.
+
+### Logs de ejecución
+
+Los scripts guardan un registro detallado de cada ejecución en **`data/logs/`**:
+
+- `etl_YYYYMMDD_HHMMSS.log` – log del ETL.
+- `inference_YYYYMMDD_HHMMSS.log` – log de la inferencia.
+- `train_YYYYMMDD_HHMMSS.log` – log del entrenamiento (si aplica).
+
+Revise estos archivos si necesita más detalle sobre qué se procesó o dónde ocurrió un error.
 
 ---
 
-## 6. Si algo falla
+## 6. Ejecución alternativa: notebooks
+
+Si prefiere usar **Jupyter/JupyterLab** en lugar de la terminal, puede ejecutar el flujo con los notebooks en la carpeta `poc/`:
+
+| Paso | Notebook | Qué hace |
+|------|----------|----------|
+| 1. ETL | `poc/1_etl.ipynb` | Lee `data/raw/`, procesa y escribe en `data/interim/`. |
+| 2. Inferencia | `poc/inference.ipynb` | Construye dataset, carga modelo y genera scores en `data/predictions/`. |
+
+**Importante:** Los notebooks también leen la configuración de `config/config.yaml`, así que primero edite el **cutoff** (y **columns_filter** si aplica) antes de ejecutarlos.
+
+Para usar los notebooks:
+
+1. Abra JupyterLab o Jupyter Notebook desde la **raíz del proyecto**.
+2. Navegue a `poc/` y abra el notebook correspondiente.
+3. Ejecute todas las celdas en orden (menú *Run* → *Run All Cells* o `Shift+Enter` celda por celda).
+
+---
+
+## 7. Si algo falla
 
 - **Error al cargar la config:** Compruebe que `config/config.yaml` existe y que la fecha en `inference.cutoff` tiene formato **YYYY-MM-DD** y está entre comillas.
 - **Error “inference.cutoff es obligatorio”:** No deje el cutoff vacío ni en blanco. Ponga una fecha válida, por ejemplo `"2026-03-01"`.
@@ -98,7 +147,7 @@ Si el mensaje de error no le resulta claro, anote el texto completo del error y 
 
 ---
 
-## 7. Entrenamiento del modelo (no es mensual)
+## 8. Entrenamiento del modelo (no es mensual)
 
 El **entrenamiento** del modelo (`python scripts/run_train.py`) no forma parte del flujo mensual del usuario. Se ejecuta cuando el equipo de análisis decide reentrenar (por ejemplo con más datos o nuevos parámetros). Usted solo debe ejecutar **ETL** (si hay datos nuevos) e **inferencia** cada mes, después de actualizar **inference.cutoff** en `config/config.yaml`.
 
@@ -109,7 +158,9 @@ El **entrenamiento** del modelo (`python scripts/run_train.py`) no forma parte d
 | Qué hacer cada mes | Dónde / Cómo |
 |-------------------|--------------|
 | 1. Indicar el mes a predecir | Editar `config/config.yaml` → `inference.cutoff` (formato "YYYY-MM-DD") |
-| 2. Cargar datos nuevos (si aplica) | Colocar archivos en `data/raw/inspecciones/` y `data/raw/consumo/` |
-| 3. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` |
-| 4. Ejecutar inferencia | `python scripts/run_inference.py` |
-| 5. Revisar resultados | Abrir `data/predictions/scores_<CUTOFF>.csv` |
+| 2. (Opcional) Filtrar por categoría/ciclo | Editar `config/config.yaml` → `inference.columns_filter` (o dejar `null`) |
+| 3. Cargar datos nuevos (si aplica) | Colocar archivos en `data/raw/inspecciones/` y `data/raw/consumo/` |
+| 4. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` o notebook `poc/1_etl.ipynb` |
+| 5. Ejecutar inferencia | `python scripts/run_inference.py` o notebook `poc/inference.ipynb` |
+| 6. Revisar resultados | Abrir `data/predictions/scores_<CUTOFF>.csv` |
+| 7. (Opcional) Revisar logs | Ver archivos en `data/logs/` |
