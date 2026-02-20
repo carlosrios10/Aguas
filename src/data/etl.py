@@ -271,7 +271,7 @@ def run_monthly_etl(raw_dir="../../data/raw",
 
         if not pending:
             logger.info("No hay meses pendientes.")
-            summary[source] = {"processed": 0, "skipped": 0, "total_pending": 0}
+            summary[source] = {"processed": 0, "skipped": 0, "total": 0}
             continue
 
         logger.info(
@@ -296,7 +296,7 @@ def run_monthly_etl(raw_dir="../../data/raw",
         summary[source] = {
             "processed": processed_count,
             "skipped": skipped_count,
-            "total_pending": len(pending)
+            "total": len(pending)
         }
         logger.info("%s: %s procesados, %s saltados", source, processed_count, skipped_count)
 
