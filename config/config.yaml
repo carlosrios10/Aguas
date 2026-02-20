@@ -2,10 +2,10 @@
 # ACTUALIZACIÓN MENSUAL: editar solo inference.cutoff (mes a predecir, YYYY-MM-DD)
 # =============================================================================
 inference:
-  cutoff: "2025-01-01"
+  cutoff: "2025-01-01"  # mes a predecir, YYYY-MM-DD
   cant_periodos: 12
   contratos_list: null  # null = todos los contratos con consumo en la ventana
-  columns_filter: null  # ej: { localidad: ["1","2"] } — null = sin filtro
+  columns_filter: null  # ej: localidad: ["1","2"]  — null = sin filtro
 
 paths:
   raw: "data/raw"
@@ -24,7 +24,7 @@ etl:
     - consumo
   overwrite: false  # true = reprocesar todo; CLI --overwrite lo sobreescribe
 
-# Train: null = todas las inspecciones disponibles (sin límite de fecha)
+# Train: cutoff = fecha de corte, null = todas las inspecciones disponibles (sin límite de fecha)
 train:
   cutoff: null
   cant_periodos: 12
