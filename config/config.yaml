@@ -7,6 +7,8 @@ inference:
   contratos_list: null  # null = todos los contratos con consumo en la ventana
   columns_filter:   # ej: { localidad: ["1", "2"], estrato: ["1", "2", "3"] } — filtra antes de tsfel
     ciclo: ['14']
+  # Columnas en el CSV de scores (null = solo contrato y score)
+  output_columns: [contrato, categoria, ciclo, localidad, estrato, barrio_comuna, diametro, medidor]
 
 paths:
   raw: "data/raw"

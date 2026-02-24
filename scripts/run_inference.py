@@ -93,6 +93,7 @@ def main():
     cant_periodos = inf["cant_periodos"]
     contratos_list = inf["contratos_list"]
     columns_filter = inf.get("columns_filter")
+    output_columns = inf.get("output_columns")
 
     logger.info("=== INFERENCIA ===")
     logger.info("CUTOFF     = %s", cutoff)
@@ -137,13 +138,20 @@ def main():
 
         logger.info("Paso 4/5: Calculando scores P(riesgo) por contrato...")
         scores = model.predict_proba(df[cols_for_model])[:, 1]
-        df_out = df[["contrato"]].copy()
+        if output_columns and isinstance(output_columns, list):
+            cols_out = [c for c in output_columns if c in df.columns]
+            if "contrato" not in cols_out:
+                cols_out = ["contrato"] + cols_out
+        else:
+            cols_out = ["contrato"]
+        df_out = df[cols_out].copy()
         df_out["score"] = scores
-        logger.info("Scores calculados: %s contratos.", len(df_out))
+        logger.info("Scores calculados: %s contratos. Columnas en CSV: %s + score", len(df_out), cols_out)
 
         logger.info("Paso 5/5: Guardando resultados...")
         os.makedirs(predictions_dir, exist_ok=True)
-        out_path = os.path.join(predictions_dir, f"scores_{cutoff}.csv")
+        exec_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = os.path.join(predictions_dir, f"scores_{cutoff}_{exec_ts}.csv")
         df_out.to_csv(out_path, index=False)
         logger.info("Inferencia completada. Archivo de scores: %s", out_path)
         return 0
