@@ -6,6 +6,8 @@ inference:
   cant_periodos: 12
   contratos_list: null  # null = todos los contratos con consumo en la ventana
   columns_filter: null  # ej: localidad: ["1","2"]  — null = sin filtro
+  # Columnas en el CSV de scores (null o [] = solo contrato y score)
+  output_columns: ["contrato", "colonia_grl", "municipio_grl", "localidad_grl", "tipo_serv_gral"]
 
 paths:
   raw: "data/raw"
