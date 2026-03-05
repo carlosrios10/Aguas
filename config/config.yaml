@@ -7,6 +7,8 @@ inference:
   contratos_list: null  # null = todos los contratos con consumo en la ventana
   columns_filter:
     categoria: ["Industrial"]  # ej: categoria: ["Industrial"]  — null = sin filtro
+  # Columnas adicionales en el CSV de salida (además de contrato y score). null = solo contrato y score
+  output_columns: [categoria, subcategoria_estrato, estado, instalacion, localidad, municipio, barrio, microsector]
 
 paths:
   raw: "data/raw"
