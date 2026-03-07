@@ -63,6 +63,10 @@ inference:
 
 Este filtro se aplica antes de calcular las variables de series de tiempo, lo que acelera el proceso si solo necesita un segmento.
 
+### Parámetro opcional: output_columns (columnas en el CSV de salida)
+
+En `inference.output_columns` puede indicar qué columnas adicionales desea en el archivo de resultados además de **contrato** y **score** (por ejemplo categoría, estrato, municipio, localidad). Si pone **null** o no existe la opción, el CSV solo tendrá contrato y score. El equipo técnico puede ajustar la lista según lo que necesite para priorizar inspecciones.
+
 ---
 
 ## 4. Cómo ejecutar (desde la raíz del proyecto)
@@ -101,9 +105,15 @@ El script leerá el **cutoff** que configuró en `config/config.yaml` y generar�
 
 Al finalizar la inferencia sin errores, el archivo de resultados se guarda en:
 
-**`data/predictions/scores_<CUTOFF>.csv`**
+**`data/predictions/scores_<CUTOFF>_<timestamp>.csv`**
 
-Donde `<CUTOFF>` es la fecha que puso en `inference.cutoff` (por ejemplo `scores_2025-06-01.csv`). Ese CSV contiene, por contrato, el puntaje de riesgo (probabilidad de fraude/anomalía) según el modelo.
+- **&lt;CUTOFF&gt;** es la fecha que puso en `inference.cutoff` (por ejemplo `2025-06-01`).
+- **&lt;timestamp&gt;** es la fecha y hora de esa ejecución (formato YYYYMMDD_HHMMSS), para no sobrescribir ejecuciones anteriores.  
+  Ejemplo: `scores_2025-06-01_20250206_143022.csv`.
+
+Ese CSV contiene, por contrato, el puntaje de riesgo (probabilidad de fraude/anomalía) según el modelo. Si en la configuración está definido **output_columns**, el archivo incluirá además esas columnas (por ejemplo categoría, estrato, municipio); si no, solo aparecen **contrato** y **score**.
+
+**Varios archivos en la carpeta:** cada ejecución genera un archivo nuevo. El más reciente (por fecha en el nombre) corresponde a la última vez que ejecutó la inferencia.
 
 ### Logs de ejecución
 
@@ -143,6 +153,8 @@ Para usar los notebooks:
 - **Error por “meses cargados” o datos insuficientes:** Asegúrese de haber ejecutado el ETL para los meses que necesita la ventana de consumo (por defecto 12 meses hacia atrás desde el cutoff). Debe haber archivos en `data/interim/consumo/` para esos meses.
 - **Error al cargar el modelo:** Verifique que en `models/` existan `lgbm_model.pkl` y `features.pkl`. Si faltan, debe proporcionarlos el equipo que entrena el modelo.
 
+- **Varios archivos scores_... en data/predictions:** Es normal. Cada ejecución genera un archivo con fecha y hora en el nombre. El más reciente es el de la última ejecución.
+
 Si el mensaje de error no le resulta claro, anote el texto completo del error y contacte al equipo técnico.
 
 ---
@@ -162,5 +174,5 @@ El **entrenamiento** del modelo (`python scripts/run_train.py`) no forma parte d
 | 3. Cargar datos nuevos (si aplica) | Colocar archivos en `data/raw/inspecciones/` y `data/raw/consumo/` |
 | 4. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` o notebook `poc/1_etl.ipynb` |
 | 5. Ejecutar inferencia | `python scripts/run_inference.py` o notebook `poc/inference.ipynb` |
-| 6. Revisar resultados | Abrir `data/predictions/scores_<CUTOFF>.csv` |
+| 6. Revisar resultados | Abrir el archivo en `data/predictions/` (nombre tipo `scores_<CUTOFF>_<timestamp>.csv`; el más reciente es el último) |
 | 7. (Opcional) Revisar logs | Ver archivos en `data/logs/` |
