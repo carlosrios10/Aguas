@@ -30,7 +30,7 @@ etl:
 
 # Train: null = todas las inspecciones disponibles (sin límite de fecha)
 train:
-  cutoff: "2018-01-01"
+  cutoff: 
   cant_periodos: 12
   max_ctas_neg: 500
   sam_th: 0.6

@@ -40,7 +40,8 @@ inference:
   cutoff: "2026-03-01"
   cant_periodos: 12
   contratos_list: null
-  columns_filter: null   # opcional: filtrar por columnas del dataset (ej: { ciclo: ["14","16"] })
+  columns_filter: null   # opcional: filtrar por columnas (ej: { ciclo: ["14","16"] })
+  output_columns: [contrato, categoria, ciclo, ...]   # opcional: columnas extra en el CSV (null = solo contrato y score)
 ```
 
 - Use siempre comillas alrededor de la fecha.
@@ -87,9 +88,9 @@ El script leerá el **cutoff** que configuró en `config/config.yaml` y generar�
 
 Al finalizar la inferencia sin errores, el archivo de resultados se guarda en:
 
-**`data/predictions/scores_<CUTOFF>.csv`**
+**`data/predictions/scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv`**
 
-Donde `<CUTOFF>` es la fecha que puso en `inference.cutoff` (por ejemplo `scores_2026-03-01.csv`). Ese CSV contiene, por contrato, el puntaje de riesgo (probabilidad de fraude/anomalía) según el modelo.
+Donde `<CUTOFF>` es la fecha que puso en `inference.cutoff` (por ejemplo `2026-03-01`) y la parte `<AAAAMMDD>_<HHMMSS>` es la fecha y hora de la ejecución (para no sobrescribir ejecuciones anteriores). Ejemplo: **`scores_2026-03-01_20260218_143022.csv`**. Ese CSV contiene, por contrato, el puntaje de riesgo (probabilidad de fraude/anomalía) según el modelo.
 
 Si en la config está definido **paths.logs** (por ejemplo `data/logs`), cada ejecución de ETL, inferencia o entrenamiento genera además un archivo de log con fecha y hora (por ejemplo `inference_20260218_120000.log`) para facilitar la depuración.
 
@@ -143,4 +144,4 @@ El **entrenamiento** del modelo no forma parte del flujo mensual del usuario. Se
 | 2. Cargar datos nuevos (si aplica) | Colocar archivos en `data/raw/inspecciones/` y `data/raw/consumo/` |
 | 3. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` (o `poc/1_etl.ipynb`) |
 | 4. Ejecutar inferencia | `python scripts/run_inference.py` (o `poc/inference.ipynb`) |
-| 5. Revisar resultados | Abrir `data/predictions/scores_<CUTOFF>.csv` |
+| 5. Revisar resultados | Abrir el archivo más reciente en `data/predictions/` (nombre tipo `scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv`) |

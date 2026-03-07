@@ -44,7 +44,8 @@ proyecto/
 │   ├── hyperparams.pkl          # Hiperparámetros LGBM
 │   └── lgbm_model.pkl           # Modelo entrenado (salida del train)
 ├── docs/                        # Documentación
-│   ├── manual_usuario.md        # Manual para ejecución mensual (inferencia)
+│   ├── manual_usuario.md        # Manual para ejecución mensual (ETL + inferencia)
+│   ├── guia_inferencia_paso_a_paso.md  # Guía paso a paso inferencia (personas no técnicas)
 │   └── setup.md                 # Configuración del entorno
 ├── requirements.txt
 └── README.md
@@ -83,7 +84,7 @@ Todos los parámetros editables están en un solo archivo:
 - **log_level**: nivel de logging (`INFO`, `DEBUG`, `WARNING`, `ERROR`). Aplica a ETL, train e inferencia cuando se ejecutan por script.
 - **etl**: `sources` (inspecciones, consumo, maestro), `overwrite` (reprocesar todo o solo pendientes).
 - **train**: `cutoff`, `cant_periodos`, `max_ctas_neg`, sampling (`sam_th`, `param_imb_method`), `preprocesor_num`.
-- **inference**: `cutoff`, `cant_periodos`, `contratos_list` (null = todos), `columns_filter` (opcional: dict columna → lista de valores para filtrar el dataset antes de tsfel).
+- **inference**: `cutoff`, `cant_periodos`, `contratos_list` (null = todos), `columns_filter` (opcional), `output_columns` (columnas en el CSV de scores; null = solo contrato y score).
 
 Los notebooks y los scripts leen esta config; los scripts permiten usar otro archivo con `--config otro.yaml`.
 
@@ -109,7 +110,7 @@ Ejecutar los notebooks **desde la raíz del proyecto** (o con el kernel configur
 |-------|-----------------|----------|
 | 1     | `1_etl.ipynb`   | ETL: lee `data/raw/`, procesa y escribe en `data/interim/` (parquets por año/mes). Usa `config` para paths y `etl.sources`/`etl.overwrite`. |
 | 2     | `train.ipynb`   | Lee `data/interim/`, construye dataset wide de **train** (fechas de corte ≤ cutoff de config), entrena LGBM y guarda `models/lgbm_model.pkl`. Usa `models/features.pkl` y `models/hyperparams.pkl`. |
-| 3     | `inference.ipynb` | Construye dataset wide de **inferencia** para el cutoff de config, carga modelo y features, guarda `data/predictions/scores_<CUTOFF>.csv`. |
+| 3     | `inference.ipynb` | Construye dataset wide de **inferencia** para el cutoff de config, carga modelo y features, guarda `data/predictions/scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv`. |
 
 ### Parámetros importantes (en `config/config.yaml`)
 
@@ -117,7 +118,7 @@ Ejecutar los notebooks **desde la raíz del proyecto** (o con el kernel configur
   Fecha tope de inspecciones: se usan todos los meses con inspecciones hasta esa fecha para el dataset de train.
 
 - **inference.cutoff**  
-  Mes a predecir; ese mes no entra en el análisis (solo consumo anterior). Define el nombre del CSV de salida (`scores_<CUTOFF>.csv`).
+  Mes a predecir; ese mes no entra en el análisis (solo consumo anterior). El CSV de salida se nombra `scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv` (fecha y hora de ejecución).
 
 - **inference.columns_filter** (opcional)  
   Filtro por columnas del dataset de inferencia (ej. `{ ciclo: ["14","16"] }`). Se aplica antes del cálculo costoso de tsfel. `null` = sin filtro.
@@ -131,4 +132,4 @@ Ejecutar los notebooks **desde la raíz del proyecto** (o con el kernel configur
 |------------|-------------------------------------------------------------------------------------|----------------------|
 | ETL        | `data/raw/` (inspecciones, consumo, maestro), `config` (paths, etl)                  | `data/interim/`, opcionalmente `data/logs/etl_*.log` |
 | Train      | `data/interim/`, `models/features.pkl`, `models/hyperparams.pkl`, `config` (paths, train) | `data/processed/train/.../`, `models/lgbm_model.pkl`, opc. `data/logs/train_*.log` |
-| Inferencia | `data/interim/`, `models/lgbm_model.pkl`, `models/features.pkl`, `config` (paths, inference, columns_filter) | `data/processed/inference/.../`, `data/predictions/scores_<CUTOFF>.csv`, opc. `data/logs/inference_*.log` |
+| Inferencia | `data/interim/`, `models/lgbm_model.pkl`, `models/features.pkl`, `config` (paths, inference, columns_filter) | `data/processed/inference/.../`, `data/predictions/scores_<CUTOFF>_<timestamp>.csv`, opc. `data/logs/inference_*.log` |
