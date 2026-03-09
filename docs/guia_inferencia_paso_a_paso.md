@@ -72,9 +72,9 @@ Si el equipo te dijo que uses un “entorno virtual” (venv):
 
 - **Windows (PowerShell):**
   ```text
-  .\.venv\Scripts\activate
+  .\qenv\Scripts\activate
   ```
-  (o el nombre de la carpeta del entorno que te hayan dado, por ejemplo `.venv`).
+  (o el nombre de la carpeta del entorno que te hayan dado, por ejemplo `qenv`).
 
 - Verás que aparece el nombre del entorno al inicio de la línea; entonces ya puedes pasar al paso 4.
 
@@ -160,7 +160,7 @@ Igual que en el Paso 2: la terminal debe estar en la carpeta que contiene `confi
 Si usas entorno virtual, actívalo igual que en el Paso 3:
 
 ```text
-.\.venv\Scripts\activate
+.\qenv\Scripts\activate
 ```
 
 ### 3. Levantar Jupyter Lab desde la consola

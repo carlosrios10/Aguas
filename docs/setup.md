@@ -101,4 +101,4 @@ O, para probar el pipeline:
 Las carpetas `data/` y `models/` no se suben a Git. En una máquina nueva:
 
 - **data/:** Copiar desde la máquina original o generar ejecutando el ETL si tenés los archivos raw.
-- **models/:** Se crean al ejecutar `poc/3_train.ipynb`; si ya tenés un modelo, copiá los `.pkl` a `models/`.
+- **models/:** Se crean al ejecutar `poc/train.ipynb`; si ya tenés un modelo, copiá los `.pkl` a `models/`.
