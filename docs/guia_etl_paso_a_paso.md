@@ -167,7 +167,7 @@ python scripts/run_etl.py --config otro.yaml
 Si prefiere ejecutar el ETL de forma **interactiva** (celda a celda, viendo el resumen de lo procesado), puede usar el notebook en la carpeta `poc/`:
 
 1. Abra la terminal en la **raíz del proyecto** (donde están `config/`, `scripts/`, `poc/`, `data/`).
-2. (Opcional) Active el entorno virtual si lo usa (por ejemplo: `.\.venv\Scripts\activate` en Windows).
+2. (Opcional) Active el entorno virtual si lo usa (en este proyecto: `.\qenv\Scripts\activate` en Windows).
 3. Inicie Jupyter Lab: `jupyter lab` (o abra el proyecto en VS Code y abra el notebook desde ahí).
 4. En el panel de archivos, entre en la carpeta **`poc`** y abra **`1_etl.ipynb`**.
 5. Asegúrese de que el **kernel** usa el entorno del proyecto (donde están instaladas las dependencias).

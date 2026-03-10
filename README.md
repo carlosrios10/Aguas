@@ -64,9 +64,11 @@ Para uso operativo mensual (solo editar config e ejecutar ETL e inferencia), ver
 ### Prerrequisitos
 
 1. **Entorno Python**  
-   Crear y activar el entorno virtual e instalar dependencias. Pasos detallados en [docs/setup.md](docs/setup.md).
+   Crear y activar el entorno virtual e instalar dependencias. En este proyecto el entorno estándar se llama **`qenv`** (ver pasos detallados en [docs/setup.md](docs/setup.md)):
 
    ```bash
+   python -m venv qenv
+   .\qenv\Scripts\activate   # Windows
    pip install -r requirements.txt
    ```
 
