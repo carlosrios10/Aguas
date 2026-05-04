@@ -1,4 +1,4 @@
-# EMCALI POC
+# EMPAGUA POC
 
 POC de pipeline de ML para detección de anomalías/fraude en consumo: ETL, construcción de dataset wide, entrenamiento con LightGBM e inferencia.
 
@@ -73,7 +73,7 @@ Para uso operativo mensual (solo editar config e ejecutar ETL e inferencia), ver
    ```
 
 2. **Datos de entrada**  
-   En `data/raw/` debe estar la estructura que espera el ETL: inspecciones, consumo y maestro (carpetas `inspecciones/`, `consumo/`, `maestro/` con archivos `*_AAAA_MM.xlsx`). Ver `config/config.yaml` → `etl.sources` y [docs/manual_usuario.md](docs/manual_usuario.md).
+   En `data/raw/` debe estar la estructura que espera el ETL: inspecciones, consumo y maestro (carpetas `inspecciones/`, `consumo/`, `maestro/` con archivos `*_AAAA_MM.txt`, UTF-8, separador `|`). Ver `config/config.yaml` → `etl.sources` y [docs/manual_usuario.md](docs/manual_usuario.md).
 
 3. **Artefactos para train**  
    El notebook de train espera en `models/` los archivos `features.pkl` y `hyperparams.pkl`. Si no existen, hay que crearlos antes (proceso de selección de features e hiperparámetros).

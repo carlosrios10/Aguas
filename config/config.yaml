@@ -5,10 +5,10 @@ inference:
   cutoff: "2025-09-01"
   cant_periodos: 12
   contratos_list: null  # null = todos los contratos con consumo en la ventana
-  columns_filter:   # ej: { localidad: ["1", "2"], estrato: ["1", "2", "3"] } — filtra antes de tsfel
-    ciclo: ['14']
+  columns_filter: null # ej: { localidad: ["1", "2"], estrato: ["1", "2", "3"] } — filtra antes de tsfel
+    # zona: ['4.0']
   # Columnas en el CSV de scores (null = solo contrato y score)
-  output_columns: [contrato, categoria, ciclo, localidad, estrato, barrio_comuna, diametro, medidor]
+  output_columns: ['contrato', 'municipio', 'zona', 'colonia', 'fecha_medidor', 'tipo', 'desc_categoria', 'es_digital']
 
 paths:
   raw: "data/raw"
@@ -26,13 +26,13 @@ etl:
     - inspecciones
     - consumo
     - maestro
-  overwrite: False  # true = reprocesar todo; CLI --overwrite lo sobreescribe
+  overwrite: true  # true = reprocesar todo; CLI --overwrite lo sobreescribe
 
 # Train: null = todas las inspecciones disponibles (sin límite de fecha)
 train:
-  cutoff: 
+  cutoff: null
   cant_periodos: 12
-  max_ctas_neg: 500
-  sam_th: 0.6
-  param_imb_method: "over"
-  preprocesor_num: 1
+  max_ctas_neg: 200
+  sam_th: 0.3
+  param_imb_method: "under"
+  preprocesor_num: 4

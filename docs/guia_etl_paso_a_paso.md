@@ -1,12 +1,12 @@
 # Guía paso a paso: Cómo preparar los archivos raw y ejecutar el ETL
 
-Esta guía está pensada para quien debe **generar o colocar los archivos de entrada** del proyecto y ejecutar el **ETL** (extracción y limpieza). El ETL lee archivos Excel desde `data/raw/`, los normaliza y guarda el resultado en `data/interim/`. Para el flujo mensual completo (ETL + inferencia), consulte [manual_usuario.md](manual_usuario.md).
+Esta guía está pensada para quien debe **generar o colocar los archivos de entrada** del proyecto y ejecutar el **ETL** (extracción y limpieza). El ETL lee archivos de texto desde `data/raw/` (**UTF-8**, columnas separadas por **`|`**), los normaliza y guarda el resultado en `data/interim/`. Para el flujo mensual completo (ETL + inferencia), consulte [manual_usuario.md](manual_usuario.md).
 
 ---
 
 ## ¿Qué hace el ETL?
 
-- **Lee** archivos Excel (`.xlsx`) desde `data/raw/` organizados por fuente y mes.
+- **Lee** archivos `.txt` desde `data/raw/` (pipe `|`, UTF-8), organizados por fuente y mes.
 - **Limpia y normaliza** los datos (nombres de columnas en minúsculas, tipos de dato, fechas al primer día del mes, deduplicación).
 - **Escribe** en `data/interim/` archivos Parquet por año/mes (por ejemplo `data/interim/consumo/year=2025/month=03/consumo.parquet`).
 
@@ -21,19 +21,19 @@ Debe existir una carpeta por cada **fuente** y, dentro de ella, archivos con el 
 ```
 data/raw/
 ├── inspecciones/
-│   ├── inspecciones_2025_01.xlsx
-│   ├── inspecciones_2025_02.xlsx
+│   ├── inspecciones_2025_01.txt
+│   ├── inspecciones_2025_02.txt
 │   └── ...
 ├── consumo/
-│   ├── consumo_2025_01.xlsx
-│   ├── consumo_2025_02.xlsx
+│   ├── consumo_2025_01.txt
+│   ├── consumo_2025_02.txt
 │   └── ...
 └── maestro/
-    ├── maestro_2025_01.xlsx
+    ├── maestro_2025_01.txt
     └── ...
 ```
 
-**Nombre del archivo:** `{fuente}_{AAAA}_{MM}.xlsx`  
+**Nombre del archivo:** `{fuente}_{AAAA}_{MM}.txt`  
 - **fuente:** `inspecciones`, `consumo` o `maestro`  
 - **AAAA:** año con 4 dígitos (ej. 2025)  
 - **MM:** mes con 2 dígitos (ej. 01, 02, 12)
@@ -53,9 +53,9 @@ Si en `config/config.yaml` la sección `etl.sources` incluye solo `inspecciones`
 | **resultado**| Número (0 o 1) | Resultado de la inspección: **1** = fraude/irregularidad, **0** (u otro) = sin fraude. |
 | **observacion** | Opcional   | Texto; puede estar vacío. |
 
-Los nombres de columna pueden estar en mayúsculas o con tildes en el Excel; el ETL los normaliza (minúsculas, sin tildes, espacios → guión bajo).
+Los nombres de columna pueden estar en mayúsculas o con tildes en el archivo; el ETL los normaliza (minúsculas donde aplique).
 
-### Ejemplo de contenido (inspecciones_2025_01.xlsx)
+### Ejemplo de contenido (inspecciones_2025_01.txt)
 
 | contrato | fecha       | resultado | observacion   |
 |----------|-------------|-----------|---------------|
@@ -81,7 +81,7 @@ Los nombres de columna pueden estar en mayúsculas o con tildes en el Excel; el 
 | **causa**    | Número o texto | Código causa; se rellena con 0 si falta. |
 | **observacion** | Número o texto | Código observación; se rellena con 0 si falta. |
 
-### Ejemplo de contenido (consumo_2025_01.xlsx)
+### Ejemplo de contenido (consumo_2025_01.txt)
 
 | contrato | ano | mes | consumo | funcion | causa | observacion |
 |----------|-----|-----|---------|---------|-------|-------------|
@@ -111,7 +111,7 @@ Los nombres de columna pueden estar en mayúsculas o con tildes en el Excel; el 
 
 Si alguna de estas columnas no existe en el Excel, el ETL puede fallar o rellenar con valor por defecto según el código; es recomendable incluir al menos **contrato** y **categoria**.
 
-### Ejemplo de contenido (maestro_2025_01.xlsx)
+### Ejemplo de contenido (maestro_2025_01.txt)
 
 | contrato | categoria   | diametro | estrato | barrio_comuna | ciclo | localidad | medidor |
 |----------|-------------|----------|---------|---------------|-------|-----------|---------|
@@ -127,7 +127,7 @@ Si alguna de estas columnas no existe en el Excel, el ETL puede fallar o rellena
 
 1. **Crear las carpetas** `data/raw/inspecciones/`, `data/raw/consumo/`, `data/raw/maestro/` (si no existen).
 2. **Exportar o generar** los Excel con las columnas indicadas para cada fuente.
-3. **Nombrar cada archivo** exactamente: `inspecciones_AAAA_MM.xlsx`, `consumo_AAAA_MM.xlsx`, `maestro_AAAA_MM.xlsx`.
+3. **Nombrar cada archivo** exactamente: `inspecciones_AAAA_MM.txt`, `consumo_AAAA_MM.txt`, `maestro_AAAA_MM.txt` (UTF-8, separador `|`).
 4. **Colocar cada archivo** en la carpeta de su fuente.
 5. Revisar que **fechas y números** estén en formato coherente (fechas reconocibles por Excel, consumo numérico, resultado 0/1 en inspecciones).
 
@@ -194,15 +194,15 @@ Si en `config/config.yaml` está definido `paths.logs` (por ejemplo `data/logs`)
 ## 8. Si algo falla
 
 - **"Directorio ... no existe, saltando"**  
-  Cree la carpeta correspondiente en `data/raw/` (por ejemplo `data/raw/inspecciones/`) y coloque ahí los archivos con el nombre `{fuente}_{AAAA}_{MM}.xlsx`.
+  Cree la carpeta correspondiente en `data/raw/` (por ejemplo `data/raw/inspecciones/`) y coloque ahí los archivos con el nombre `{fuente}_{AAAA}_{MM}.txt` (UTF-8, separador `|`).
 
-- **Error al leer el Excel o columna no encontrada**  
+- **Error al leer el archivo o columna no encontrada**  
   Compruebe que el archivo tiene las **columnas requeridas** con nombres que, una vez normalizados (minúsculas, sin tildes, espacios → `_`), coincidan con los de esta guía (p. ej. `contrato`, `fecha`, `resultado` para inspecciones; `ano`, `mes` para consumo).
 
 - **"No hay meses pendientes"**  
   Todos los archivos que hay en `data/raw/` para esa fuente ya tienen su Parquet en `data/interim/`. Para volver a procesarlos, use `python scripts/run_etl.py --overwrite`.
 
 - **Maestro obligatorio para inferencia**  
-  La inferencia necesita el maestro en `data/interim/maestro/`. Asegúrese de tener al menos un archivo en `data/raw/maestro/` (p. ej. `maestro_2025_01.xlsx`) y de que la fuente `maestro` esté en `etl.sources` en `config/config.yaml`, y ejecute el ETL.
+  La inferencia necesita el maestro en `data/interim/maestro/`. Asegúrese de tener al menos un archivo en `data/raw/maestro/` (p. ej. `maestro_2025_01.txt`) y de que la fuente `maestro` esté en `etl.sources` en `config/config.yaml`, y ejecute el ETL.
 
 Para más detalle sobre el flujo mensual y la inferencia, consulte [manual_usuario.md](manual_usuario.md).

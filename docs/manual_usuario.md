@@ -17,9 +17,9 @@ Cada mes usted solo debe **indicar el mes a predecir** y ejecutar el proceso. El
 
 - **Entorno Python** ya configurado en su máquina (entorno virtual activado, dependencias instaladas con `pip install -r requirements.txt`). Si no lo tiene, solicite apoyo al equipo técnico o consulte [docs/setup.md](setup.md) si existe.
 - **Datos de entrada:** En la carpeta `data/raw/` deben estar los archivos según el formato esperado:
-  - `data/raw/inspecciones/inspecciones_AAAA_MM.xlsx`
-  - `data/raw/consumo/consumo_AAAA_MM.xlsx`
-  - `data/raw/maestro/maestro_AAAA_MM.xlsx` (obligatorio para inferencia; el ETL debe haberlo procesado)
+  - `data/raw/inspecciones/inspecciones_AAAA_MM.txt`
+  - `data/raw/consumo/consumo_AAAA_MM.txt`
+  - `data/raw/maestro/maestro_AAAA_MM.txt` (obligatorio para inferencia; el ETL debe haberlo procesado; texto UTF-8, columnas separadas por `|`)
   (sustituya AAAA por el año y MM por el mes, por ejemplo 2026 y 03).
 - **Modelo en uso:** En la carpeta `models/` deben existir los archivos `lgbm_model.pkl` y `features.pkl` (proporcionados o generados por el equipo que entrena el modelo).
 
@@ -101,7 +101,7 @@ Si en la config está definido **paths.logs** (por ejemplo `data/logs`), cada ej
 - **Error al cargar la config:** Compruebe que `config/config.yaml` existe y que la fecha en `inference.cutoff` tiene formato **YYYY-MM-DD** y está entre comillas.
 - **Error “inference.cutoff es obligatorio”:** No deje el cutoff vacío ni en blanco. Ponga una fecha válida, por ejemplo `"2026-03-01"`.
 - **Error por “meses cargados” o datos insuficientes:** Asegúrese de haber ejecutado el ETL para los meses que necesita la ventana de consumo (por defecto 12 meses hacia atrás desde el cutoff). Debe haber archivos en `data/interim/consumo/` y `data/interim/maestro/` para que la inferencia funcione.
-- **Error “No hay maestro en interim”:** La inferencia requiere el maestro procesado. Ejecute el ETL (incluyendo la fuente **maestro** en `config.yaml` → `etl.sources`) y asegúrese de tener al menos un archivo en `data/raw/maestro/` (por ejemplo `maestro_AAAA_MM.xlsx`).
+- **Error “No hay maestro en interim”:** La inferencia requiere el maestro procesado. Ejecute el ETL (incluyendo la fuente **maestro** en `config.yaml` → `etl.sources`) y asegúrese de tener al menos un archivo en `data/raw/maestro/` (por ejemplo `maestro_AAAA_MM.txt`).
 - **“Dataset de inferencia quedó vacío tras aplicar columns_filter”:** El filtro definido en `inference.columns_filter` no coincide con ningún contrato (por ejemplo valores de ciclo o localidad que no existen en los datos). Revise los valores en el maestro o deje `columns_filter: null` para procesar todos.
 - **Error al cargar el modelo:** Verifique que en `models/` existan `lgbm_model.pkl` y `features.pkl`. Si faltan, debe proporcionarlos el equipo que entrena el modelo.
 

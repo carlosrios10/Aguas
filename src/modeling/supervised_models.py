@@ -25,7 +25,13 @@ def binary_area_peligrosa(x):
     return x.map({'zona peligrosa':1,'zona no peligrosa':0}).to_frame()
 
 def get_preprocesor(preprocesor):
-    """Preprocesador para features categóricas. Soporta: -1 (passthrough), 1 (dummy + TE estrato/localidad)."""
+    """
+    Preprocesador para features categóricas en el ColumnTransformer del pipeline LGBM.
+
+    - ``-1``: passthrough.
+    - ``1``: columnas legacy (localidad, barrio_comuna, categoria, estrato, medidor_2).
+    - ``4``: columnas maestro EMPAGUA crudas (municipio, desc_categoria, zona, tipo, es_digital).
+    """
     if preprocesor == -1:
         preprocessor = ColumnTransformer(transformers=[], remainder='passthrough')
     elif preprocesor == 1:
@@ -52,10 +58,30 @@ def get_preprocesor(preprocesor):
         ('p_pipe_medidor_2', pipe_medidor_2, ['medidor_2']),
         ]
         preprocessor = ColumnTransformer(transformers= t_features,remainder='passthrough')
+    elif preprocesor == 4:
+        pipe_municipio = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.02)),
+            ('categoria_dummy', ToDummy(['municipio']))
+        ])
+        pipe_categoria = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
+            ('te', TeEncoder(['desc_categoria'], w=50))
+        ])
+
+        vars_enc = ["zona"]
+        vars_dummy = ['tipo', 'es_digital']
+        t_features = [
+            ('dummy_var', ToDummy(vars_dummy), vars_dummy),
+            ('enc_var', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), vars_enc),
+            ('p_municipio', pipe_municipio, ['municipio']),
+            ('p_categoria', pipe_categoria, ['desc_categoria']),
+        ]
+
+        preprocessor = ColumnTransformer(transformers=t_features, remainder='passthrough')
     else:
         raise ValueError(
-            f"preprocesor debe ser -1 o 1; recibido: {preprocesor}. "
-            "Valores soportados: -1=passthrough, 1=dummy+TE."
+            f"preprocesor debe ser -1, 1 o 4; recibido: {preprocesor}. "
+            "Valores soportados: -1=passthrough, 1=dummy+TE legacy, 4=EMPAGUA maestro (municipio/desc_categoria/…)."
         )
     return preprocessor
 

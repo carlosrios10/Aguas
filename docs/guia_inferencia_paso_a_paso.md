@@ -64,7 +64,7 @@ El sistema necesita saber **para qué mes** quieres los puntajes (por ejemplo, e
 - **Importante:** Tienes que estar en la **carpeta raíz del proyecto** (la que contiene las carpetas `config`, `scripts`, `data`, etc.).  
   - Si abriste la terminal desde otra carpeta, escribe algo como (ajusta la ruta a tu PC):
     ```text
-    cd C:\ruta\donde\esta\el\proyecto\emcali_poc
+    cd C:\ruta\donde\esta\el\proyecto\empagua_poc
     ```
   - y pulsa Enter.
 
@@ -156,7 +156,7 @@ Si prefieres ejecutar la inferencia desde un **notebook** en lugar del comando e
 
 ### 1. Abrir la terminal en la carpeta raíz del proyecto
 
-Igual que en el Paso 2: la terminal debe estar en la carpeta que contiene `config`, `scripts`, `poc`, `data`, etc. Si no, usa `cd` para entrar (por ejemplo: `cd C:\ruta\al\proyecto\emcali_poc`).
+Igual que en el Paso 2: la terminal debe estar en la carpeta que contiene `config`, `scripts`, `poc`, `data`, etc. Si no, usa `cd` para entrar (por ejemplo: `cd C:\ruta\al\proyecto\empagua_poc`).
 
 ### 2. Activar el entorno virtual (si te lo indicaron)
 
@@ -229,4 +229,4 @@ Igual que en la ejecución por script: en la carpeta **`data/predictions/`**, co
 ---
 
 **Documento:** Guía de inferencia paso a paso (personas no técnicas)  
-**Proyecto:** AquaData (emcali_poc). Para flujo mensual completo y más detalle, ver [manual_usuario.md](manual_usuario.md).
+**Proyecto:** EMPAGUA (empagua_poc). Para flujo mensual completo y más detalle, ver [manual_usuario.md](manual_usuario.md).

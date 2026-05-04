@@ -20,24 +20,19 @@ def preprocess_model_input(df):
     Reglas:
     - Normaliza variables categóricas con fillna('sin_dato') + strip.
     - Filtra por calidad de historia de consumo.
-    """
-    # correccion de estrato
-    df['estrato'] = df.apply(lambda x: x.estrato if x.categoria=='1' else -1, axis=1)
-    df['estrato'] = df.estrato.fillna('sin_dato').astype(str).str.split('.').str[0].str.strip()
-    # correccion medidor
-    df['medidor_2'] = df.medidor.str.split('_').str[0].str.strip()
-    df['medidor_2'] = df['medidor_2'].replace('-',None).replace('',None)
-    # localidad
-    df.localidad = df.localidad.fillna('sin_dato').astype(str).str.split('.').str[0].str.strip()
-    # barrio comuna
-    df['barrio_comuna'] = df['barrio_comuna'].fillna('sin_dato').astype(str).str.split('.').str[0].str.strip()
-    
-    vars_str =  ['categoria','estrato','medidor_2','localidad','barrio_comuna']
-    for col in vars_str:
-        df[col] = df[col].fillna("sin_dato").astype(str).str.strip()
 
-    # df = df[df["cant_null"] < 6].reset_index(drop=True)
-    # df = df[df["cant_ceros_12"] < 9].reset_index(drop=True)
+    Si el wide trae columnas maestro EMPAGUA (municipio, colonia, tipo, es_digital) y no las
+    esperadas por el preprocesador (localidad, barrio_comuna, medidor), se derivan aquí.
+    """
+    df = df.copy()
+    df = df[df.cant_null<=6]
+    df = df[df.cant_ceros_12<=9].reset_index(drop=True)
+    
+    df["zona"] = df["zona"].fillna("sin_dato").astype(str).str.split(".").str[0]
+    vars_str = ['municipio','zona','tipo','es_digital','desc_categoria']
+    for x in vars_str:
+        df[x] = df[x].fillna('sin_dato').astype(str)#.astype('category')
+
     return df
 
 
