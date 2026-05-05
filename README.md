@@ -28,11 +28,9 @@ proyecto/
 │   │   └── make_dataset.py      # Dataset wide, features, create_train/inference_dataset
 │   ├── modeling/                # Modelo y utilidades
 │   │   ├── supervised_models.py # LGBMModel, get_preprocesor
-│   │   ├── helpers.py           # save_model, etc.
-│   │   └── legacy/              # Código legacy (no usado en poc)
+│   │   └── helpers.py           # save_model, etc.
 │   └── preprocessing/           # Preprocesado para el modelo
-│       ├── preprocessing.py     # ToDummy, TeEncoder, CardinalityReducer, MinMaxScalerRow
-│       └── legacy.py            # Código legacy (no usado en poc)
+│       └── preprocessing.py     # ToDummy, TeEncoder, CardinalityReducer, MinMaxScalerRow
 ├── data/                        # Datos (no versionados; ver docs)
 │   ├── raw/                     # Entrada del ETL (inspecciones, consumo, maestro)
 │   ├── interim/                 # Salida ETL (parquets por año/mes)
