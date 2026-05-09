@@ -30,6 +30,7 @@ def get_preprocesor(preprocesor):
 
     - ``-1``: passthrough.
     - ``1``: columnas legacy (localidad, barrio_comuna, categoria, estrato, medidor_2).
+    - ``3``: Bogotá (uso, md_marca, localidad/material/diámetro ordinal, población dummy, estrato TE).
     - ``4``: columnas maestro EMPAGUA crudas (municipio, desc_categoria, zona, tipo, es_digital).
     """
     if preprocesor == -1:
@@ -58,6 +59,25 @@ def get_preprocesor(preprocesor):
         ('p_pipe_medidor_2', pipe_medidor_2, ['medidor_2']),
         ]
         preprocessor = ColumnTransformer(transformers= t_features,remainder='passthrough')
+    elif preprocesor == 3:
+        pipe_uso = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.02)),
+            ('te', TeEncoder(['uso'], w=50)),
+        ])
+        pipe_md_marca = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.02)),
+            ('te', TeEncoder(['md_marca'], w=50)),
+        ])
+        vars_enc = ["oc_nme_localidad", "md_material", "md_diametro"]
+        vars_dummy = ['poblacion']
+        t_features = [
+            ('dummy_var', ToDummy(vars_dummy), vars_dummy),
+            ('enc_var', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), vars_enc),
+            ('p_uso', pipe_uso, ['uso']),
+            ('p_md_marca', pipe_md_marca, ['md_marca']),
+            ('te_estrato', TeEncoder(['estrato'], w=50), ['estrato']),
+        ]
+        preprocessor = ColumnTransformer(transformers=t_features, remainder='passthrough')
     elif preprocesor == 4:
         pipe_municipio = Pipeline([
             ('cardinality_reducer', CardinalityReducer(threshold=0.02)),
@@ -80,8 +100,8 @@ def get_preprocesor(preprocesor):
         preprocessor = ColumnTransformer(transformers=t_features, remainder='passthrough')
     else:
         raise ValueError(
-            f"preprocesor debe ser -1, 1 o 4; recibido: {preprocesor}. "
-            "Valores soportados: -1=passthrough, 1=dummy+TE legacy, 4=EMPAGUA maestro (municipio/desc_categoria/…)."
+            f"preprocesor debe ser -1, 1, 3 o 4; recibido: {preprocesor}. "
+            "Valores soportados: -1=passthrough, 1=legacy, 3=Bogotá (uso/md_marca/…), 4=EMPAGUA maestro."
         )
     return preprocessor
 

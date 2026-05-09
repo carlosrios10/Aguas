@@ -12,26 +12,40 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.base import BaseEstimator, TransformerMixin
 
+# Categóricas Bogotá (maestro + consumo) normalizadas antes del ColumnTransformer del LGBM.
+PREPROCESS_CATEGORICAL_STRING_COLUMNS = [
+    "oc_nme_barrio",
+    "oc_nme_localidad",
+    "md_marca",
+    "md_material",
+    "md_diametro",
+    "poblacion",
+    "zona",
+    "uso",
+    "estrato",
+]
+
 
 def preprocess_model_input(df):
     """
     Limpieza de entrada para train/inference del modelo.
 
     Reglas:
-    - Normaliza variables categóricas con fillna('sin_dato') + strip.
-    - Filtra por calidad de historia de consumo.
-
-    Si el wide trae columnas maestro EMPAGUA (municipio, colonia, tipo, es_digital) y no las
-    esperadas por el preprocesador (localidad, barrio_comuna, medidor), se derivan aquí.
+    - Filtra por calidad de historia de consumo (``cant_null``, ``cant_ceros_12``).
+    - ``zona``: parte entera antes del punto (ej. ``10.0`` → ``10``).
+    - Categóricas en ``PREPROCESS_CATEGORICAL_STRING_COLUMNS``: ``fillna('sin_dato')`` y ``str``.
     """
     df = df.copy()
     df = df[df.cant_null<=6]
     df = df[df.cant_ceros_12<=9].reset_index(drop=True)
-    
-    df["zona"] = df["zona"].fillna("sin_dato").astype(str).str.split(".").str[0]
-    vars_str = ['municipio','zona','tipo','es_digital','desc_categoria']
-    for x in vars_str:
-        df[x] = df[x].fillna('sin_dato').astype(str)#.astype('category')
+
+    if "zona" in df.columns:
+        df["zona"] = df["zona"].fillna("sin_dato").astype(str).str.split(".").str[0]
+    for x in PREPROCESS_CATEGORICAL_STRING_COLUMNS:
+        if x not in df.columns:
+            df[x] = "sin_dato"
+        else:
+            df[x] = df[x].fillna("sin_dato").astype(str)
 
     return df
 

@@ -8,7 +8,7 @@ Uso (desde la raíz del proyecto):
   python scripts/run_etl.py --config otro.yaml
 
 Lee config/config.yaml (o --config) para paths y etl.sources/etl.overwrite.
-Detecta meses pendientes en data/raw/ (``<fuente>_AAAA_MM.txt``, pipe ``|``) y escribe en data/interim/.
+Detecta meses pendientes en data/raw/ (``consumo_*.csv`` o ``*.txt`` legacy en otras fuentes) y escribe en data/interim/.
 """
 import argparse
 import logging

@@ -92,6 +92,7 @@ def main():
     t = cfg["train"]
     cutoff = t["cutoff"]
     cant_periodos = t["cant_periodos"]
+    fecha_ancla_ordenes = t.get("fecha_ancla_ordenes")
     max_ctas_neg = t["max_ctas_neg"]
     sam_th = t["sam_th"]
     param_imb_method = t["param_imb_method"]
@@ -109,6 +110,7 @@ def main():
             cant_periodos=cant_periodos,
             cutoff_max=cutoff,
             max_ctas=max_ctas_neg,
+            fecha_ancla_ordenes=fecha_ancla_ordenes,
         )
         if df is None:
             logger.error(

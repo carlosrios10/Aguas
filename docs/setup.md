@@ -1,98 +1,133 @@
-# Creación del entorno
+# Configuración del entorno Python
 
-Pasos para configurar el entorno (basados en *Creacion_Entorno.pdf*).
+Guía para preparar el entorno de desarrollo y ejecución del pipeline (ETL, entrenamiento, inferencia). Úsala en máquinas locales o en servidores (por ejemplo, despliegue en EAAB).
 
-## Entornos donde se ejecutó el proyecto
+## Requisitos
 
-- **AWS** — Instancia ml.m5.2xlarge  
-  - Sistema operativo: Ubuntu 22.04.5 LTS (Jammy Jellyfish)  
-  - Versión base: Debian  
+| Componente | Detalle |
+|------------|---------|
+| **Python** | **3.10.x** (recomendado **3.10.11**). El proyecto se probó con esa línea; versiones 3.11+ pueden funcionar pero no están garantizadas con las versiones fijadas en `requirements.txt`. |
+| **Git** | Para clonar el repositorio. |
+| **Espacio** | Reserva espacio para `data/` (raw, interim, processed) y `models/`; no van en Git. |
 
-- **Windows 11 Pro** — 32 GB RAM, Intel(R) Core(TM) i7-6700HQ CPU @ 2.60GHz 2.59 GHz  
+Raíz del proyecto: carpeta donde están `requirements.txt`, `config/`, `src/` y `scripts/`.
 
 ---
 
-## Preparación del entorno en Windows
+## Opción A — Windows con Pyenv-win (recomendado si gestionás varias versiones)
 
-### Instalación de Pyenv
+### 1. Instalar Pyenv-win
 
-Para gestionar versiones de Python en Windows se recomienda usar **Pyenv**.  
-Instalación: [https://github.com/pyenv-win/pyenv-win](https://github.com/pyenv-win/pyenv-win)
+Instrucciones oficiales: [pyenv-win](https://github.com/pyenv-win/pyenv-win).
 
-### Instalación de una versión de Python
+### 2. Instalar Python 3.10.11
 
-Con Pyenv instalado, instala la versión de Python requerida:
-
-```bash
+```powershell
 pyenv install 3.10.11
+pyenv local 3.10.11
 ```
 
-### Creación de un entorno virtual con venv
+Si no usás `pyenv local`, podés fijar la versión global con `pyenv global 3.10.11`.
 
-**3.1 Seleccionar la versión de Python correcta**
+### 3. Crear y activar el entorno virtual
 
-Antes de crear el entorno virtual, asegúrate de que Pyenv use la versión instalada:
+Desde la raíz del repo:
 
-```bash
-pyenv global 3.10.11
-```
-
-**3.2 Navegar al directorio del proyecto**
-
-Ubícate en la raíz del proyecto (donde está `requirements.txt`):
-
-```bash
-cd C:\ruta\a\tu\proyecto
-```
-
-Si acabas de clonar el repo:
-
-```bash
-git clone https://github.com/carlosrios10/Aguas.git
-cd Aguas
-```
-
-**3.3 Crear el entorno virtual**
-
-```bash
+```powershell
 python -m venv qenv
+.\qenv\Scripts\Activate.ps1
 ```
 
-**3.4 Activar el entorno virtual**
+Si PowerShell bloquea la activación por política de ejecución, en una sesión con permisos adecuados:
 
-En Windows (PowerShell o CMD):
-
-```bash
-.\qenv\Scripts\activate
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-**Verificación:** Al activar, deberías ver `(qenv)` al inicio de la línea de comandos.
+Alternativa en **CMD**:
 
-### Instalación de dependencias
+```cmd
+qenv\Scripts\activate.bat
+```
 
-Con el entorno virtual activado:
+Deberías ver el prefijo `(qenv)` en el prompt.
 
-```bash
+### 4. Instalar dependencias
+
+```powershell
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### Lanzar Jupyter Lab
+### 5. (Opcional) Herramientas de desarrollo y tests
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
+---
+
+## Opción B — Windows sin Pyenv (Python desde python.org)
+
+1. Descargá e instalá [Python 3.10.11](https://www.python.org/downloads/release/python-31011/) (marca “Add python.exe to PATH” si el instalador lo ofrece).
+2. En la raíz del proyecto:
+
+```powershell
+py -3.10 -m venv qenv
+.\qenv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Si `py -3.10` no está disponible, usá `python -m venv qenv` siempre que `python --version` muestre 3.10.x.
+
+---
+
+## Linux / Ubuntu (servidor o WSL)
+
+Ejemplo con el paquete `python3.10-venv` del sistema o Python 3.10 instalado:
+
+```bash
+cd /ruta/al/proyecto
+python3.10 -m venv qenv
+source qenv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Opcional:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+---
+
+## Jupyter Lab
+
+Con el entorno activado:
 
 ```bash
 jupyter lab
 ```
 
-Se abrirá una pestaña en el navegador con la interfaz de Jupyter Lab.
+Abrí los notebooks desde la raíz del proyecto (o configurá el kernel con esa raíz como directorio de trabajo) para que funcionen los imports `from src...` y la carga de `config/config.yaml`.
 
-### Comprobar que todo funciona
+---
 
-Ejecutá un notebook de prueba para confirmar que las librerías funcionan correctamente:
+## Comprobar el entorno
 
-- **Validacion_librerias.ipynb** (en la raíz del proyecto)
+| Comando | Qué valida |
+|---------|------------|
+| `python --version` | Debe mostrar **Python 3.10.x**. |
+| `pip check` | Dependencias sin conflictos declarados. |
+| `python -c "import lightgbm, pandas, tsfel; print('ok')"` | Imports críticos del pipeline. |
+| `pytest` | Solo si instalaste `requirements-dev.txt`; ejecuta la suite en `tests/`. |
 
-O, para probar el pipeline:
+Prueba manual adicional:
 
-- Un notebook de `poc/` (por ejemplo `poc/1_etl.ipynb`) y una celda con `from src.data import etl`.
+- **Validacion_librerias.ipynb** (raíz del proyecto), o
+- Una celda en `poc/1_etl.ipynb` con `from src.data import etl`.
 
 ---
 
@@ -100,6 +135,15 @@ O, para probar el pipeline:
 
 Las carpetas `data/` y `models/` no se suben a Git. En una máquina nueva:
 
-- **data/:** Copiar desde la máquina original o generar ejecutando el ETL si tenés los archivos raw (inspecciones, consumo, maestro en `data/raw/` según `config/config.yaml` → `etl.sources`).
-- **data/logs/:** Se crea automáticamente al ejecutar los scripts (`run_etl.py`, `run_inference.py`, `run_train.py`) si en la config está definido `paths.logs`. Contiene archivos de log por ejecución (por ejemplo `etl_*.log`, `inference_*.log`, `train_*.log`).
-- **models/:** Se crean al ejecutar el entrenamiento con `python scripts/run_train.py` o el notebook `poc/train.ipynb`; si ya tenés un modelo, copiá los `.pkl` (por ejemplo `lgbm_model.pkl`, `features.pkl`, `hyperparams.pkl`) a `models/`.
+- **data/**: copiá desde el origen acordado o generá ejecutando el ETL si tenés los archivos raw (`data/raw/` según `config/config.yaml` → `etl.sources`).
+- **data/logs/**: se crea al ejecutar los scripts si en la config está definido `paths.logs`.
+- **models/**: resultado de `scripts/run_train.py` o `poc/train.ipynb`; o copiá los `.pkl` (`lgbm_model.pkl`, `features.pkl`, `hyperparams.pkl`) si ya existen.
+
+---
+
+## Referencias de entornos donde se ejecutó el proyecto
+
+- **AWS** — Instancia `ml.m5.2xlarge`, Ubuntu 22.04.5 LTS.
+- **Windows 11 Pro** — 32 GB RAM, Intel Core i7-6700HQ.
+
+Si documentás un entorno estándar para EAAB (VM, VDI, servidor interno), conviene añadir una fila aquí con SO, Python y política de red (proxy, mirrors de pip) para el equipo.

@@ -13,12 +13,13 @@ Dataset wide y features de serie temporal para modelado.
 5. Punto de entrada train: ``create_train_dataset`` → concat → pasos post-notebook → paso (1) → parquet.
 6. Punto de entrada inferencia: ``create_inference_dataset`` → paso (4) completo → merge maestro → paso (1) → parquet.
 
-**Adaptación EMPAGUA**
+**Dataset wide Bogotá (notebook de referencia POC)**
 
-Los parquets interim deben coincidir con ``src.data.etl`` (contrato, fechas, maestro, consumo). Las listas
-``VARS_FOR_*``, ``MAESTRO_COLUMNS_AFTER_CONCAT`` y la lógica de flags son el **contrato de columnas y reglas
-EMPAGUA**; el diseño sigue ``notebooks/desarrollo/2_Contruccion_dataset_v1`` como referencia, pero la fuente
-de verdad ejecutable es este módulo más el ETL.
+Los parquets interim vienen de ``src.data.etl``. La ventana temporal usa ``cant_periodos`` meses (típico 24); el
+ancho fijo del pivote es ``NUM_ANTERIOR_COLS`` = 12 columnas ``N_anterior`` (meses calendario ``<= 6`` del
+``date_range`` como en el notebook). Todo el módulo es **sólo contrato Bogotá** según notebook POC.
+
+Tras el merge de órdenes en train, ``is_fraud`` se rellena con ``-1`` si no hay orden (igual que el notebook).
 
 Usado desde ``scripts/run_train``, ``scripts/run_inference`` y notebooks POC.
 """
@@ -225,53 +226,106 @@ def compute_tsfel_consumption_vars(df, cant_periodos):
 # Carga desde interim y construcción del dataset wide
 # ---------------------------------------------------------------------------
 
-# --- Contrato de columnas EMPAGUA (salida de etl.py + notebook de referencia) ---
+# Notebook Bogotá / construcción wide (órdenes, consumo perfil, maestro)
 VARS_FOR_ORDENES = [
-    "id_inspeccion",
     "contrato",
-    "fecha",
-    "resultado",
-    "tiene_sancion",
     "date",
     "is_fraud",
+    "fecha_ejecucion",
+    "anomaliacausainefectividad",
+    "porqueesparcialobservacion",
+    "cuenta_contrato",
+    "efectiva",
+    "vigencia_inspeccion",
 ]
 VARS_FOR_CONSUMO = [
     "contrato",
-    "id_cuenta",
-    "fcm_ciclo",
-    "m3_fact_tipo",
-    "cod_problema",
-    "estatus",
-    "tuvo_cm",
-    "categoria",
+    "ciclo",
+    "poblacion",
+    "zona",
+    "uso",
+    "estrato",
+    "indicador",
+    "periodicidad",
+    "codconsumo",
+    "lectura1",
+    "lectura2",
+    "vig",
 ]
-# Columnas de maestro para join al wide (incluye categoria si existe en interim)
 VARS_MAESTRO = [
     "contrato",
-    "municipio",
-    "zona",
-    "colonia",
-    "fecha_medidor",
-    "tipo",
-    "desc_categoria",
-    "es_digital",
-    "categoria",
+    "in_sol_sectorial_ac_desc",
+    "sg_latitud",
+    "sg_longitud",
+    "oc_nme_barrio",
+    "oc_nme_localidad",
+    "md_marca",
+    "md_material",
+    "md_diametro",
 ]
 
-# Train tras concat: maestro demográfico sin duplicar ``categoria`` (ya viene del merge consumo–maestro en ETL)
-MAESTRO_COLUMNS_AFTER_CONCAT = [
-    "contrato",
-    "municipio",
-    "zona",
-    "colonia",
-    "fecha_medidor",
-    "tipo",
-    "desc_categoria",
-    "es_digital",
-]
+# Merge maestro después del concat train (solo columnas disponibles en interim).
+MAESTRO_COLUMNS_AFTER_CONCAT = list(dict.fromkeys(VARS_MAESTRO))
+
+# Columnas pivote/ancho estable: primer semestre acotadas a doce (notebook ``12_anterior``…``1_anterior``)
+NUM_ANTERIOR_COLS = 12
+
+# Lista de órdenes: default ancla tipo notebook ``2021-01-01`` + cant_periodos.
+FECHA_ANCLA_ORDENES_DEFAULT = "2021-01-01"
 
 CONFIG_CAIDAS = [(1, 4, 90), (1, 3, 90), (2, 3, 90), (1, 6, 90), (3, 3, 90), (6, 5, 10), (6, 6, 10), (6, 4, 10), (6, 1, 10), (5, 5, 10)]
 CONFIG_CONSTANTES = [8, 9, 10, 3, 4, 5]
+
+# Columnas derivadas por ``add_consumo_flags``
+BOGOTA_CONSUMO_FLAG_COLUMNS = (
+    "lectura1_flag_fraude",
+    "lectura1_flag_tecnico",
+    "lectura1_flag_inaccesible",
+    "lectura1_flag_admin",
+    "lectura1_sin_obs",
+    "lectura2_flag_fraude",
+    "lectura2_flag_tecnico",
+    "lectura2_flag_inaccesible",
+    "lectura2_flag_admin",
+    "lectura2_sin_obs",
+    "codconsumo_flag_c_normal",
+    "codconsumo_flag_c_alto",
+    "codconsumo_flag_c_bajo",
+    "codconsumo_flag_c_avg",
+)
+
+# Consumo ya pasado por ``add_consumo_flags``; si falta alguna, error (sin ramas opcionales).
+WIDE_ETIQUETADO_REQUIRED_COLUMNS = (
+    "contrato",
+    "date",
+    "consumo",
+    "uso",
+    "codconsumo",
+    "lectura1",
+    "lectura2",
+    "indicador",
+) + BOGOTA_CONSUMO_FLAG_COLUMNS
+
+
+def _require_columns(df: pd.DataFrame, required: tuple | list, *, context: str) -> None:
+    missing = set(required) - set(df.columns)
+    if missing:
+        raise ValueError(f"{context}: faltan columnas obligatorias {sorted(missing)}.")
+
+
+def _bogota_normalized_lectura_codes(series: pd.Series) -> pd.Series:
+    """Convierte lectura numérica (7, 7.0) a código '7' para isin con grupos de strings."""
+    s = pd.Series(series, index=series.index, dtype=object)
+    n = pd.to_numeric(s, errors="coerce")
+    out = pd.Series(np.nan, index=s.index, dtype=object)
+    num_mask = n.notna()
+    if num_mask.any():
+        ints = np.rint(n.loc[num_mask].astype(float)).to_numpy(dtype=np.int64)
+        out.loc[num_mask] = ints.astype(str)
+    str_mask = (~num_mask) & s.notna()
+    if str_mask.any():
+        out.loc[str_mask] = s.loc[str_mask].astype(str).str.strip()
+    return out
 
 
 def load_interim_data(interim_dir, source, start_date=None, end_date=None):
@@ -358,43 +412,74 @@ def load_maestro_latest(interim_dir):
 
 def add_consumo_flags(df):
     """
-    Añade columnas de flags al consumo (notebook 2_Contruccion_dataset_v1 celdas 38–45).
-    Requiere cod_problema: grupos de código, fact_flag_estimado (m3_fact_tipo), flag_status_* (estatus).
-    Modifica in-place.
+    Flags de consumo Bogotá. Exige ``lectura1``, ``lectura2`` y ``codconsumo``.
+
+    ``*_sin_obs`` si lectura nula; flags por categorías en ``codconsumo``;
+    ``indicador`` opcional (``X``→1; relleno 0). Modifica in-place.
     """
     if df.empty:
         return df
-    if "cod_problema" not in df.columns:
-        return df
+    need = {"lectura1", "lectura2", "codconsumo"}
+    missing = need - set(df.columns)
+    if missing:
+        raise ValueError(
+            "Consumo (flags): faltan columnas obligatorias "
+            + f"{sorted(missing)}. Se requieren lectura1, lectura2 y codconsumo."
+        )
 
-    cp = pd.to_numeric(df["cod_problema"], errors="coerce").fillna(-999999).astype(int)
-    fraude_codes = [2, 7, 8, 12, 13, 97, 98]
-    inacceso_codes = [3, 6, 89, 92]
-    servicio_codes = [9, 10, 11]
-    lectura_codes = [1, 4, 5] + list(range(75, 97))
-    df["flag_fraude"] = np.where(cp.isin(fraude_codes), 1, 0).astype("uint8")
-    df["flag_inacceso"] = np.where(cp.isin(inacceso_codes), 1, 0).astype("uint8")
-    df["flag_servicio_irregular"] = np.where(cp.isin(servicio_codes), 1, 0).astype("uint8")
-    df["flag_lectura_fallida"] = np.where(cp.isin(lectura_codes), 1, 0).astype("uint8")
-    df["flag_sin_problema"] = np.where(cp == 0, 1, 0).astype("uint8")
-    if "m3_fact_tipo" in df.columns:
-        df["fact_flag_estimado"] = df["m3_fact_tipo"].astype(str).str.strip().str.upper().isin(["E"]).astype("uint8")
-    if "estatus" in df.columns:
-        es = df["estatus"].astype(str).str.strip().str.upper()
-        df["flag_status_a"] = np.where(es == "A", 1, 0).astype("uint8")
-        df["flag_status_s"] = np.where(es == "S", 1, 0).astype("uint8")
-        df["flag_status_b"] = np.where(es == "B", 1, 0).astype("uint8")
+    grupo_fraude = ["7", "10", "12"]
+    grupo_tecnico = ["4", "5", "6", "8", "9", "11", "14", "15"]
+    grupo_inaccesible = ["16", "17", "18", "19", "20", "21"]
+    grupo_admin = ["23", "24", "25", "26", "27", "28", "29", "30"]
+
+    lectura1 = _bogota_normalized_lectura_codes(df["lectura1"])
+    lectura2 = _bogota_normalized_lectura_codes(df["lectura2"])
+
+    df["lectura1_flag_fraude"] = lectura1.isin(grupo_fraude).astype("int8")
+    df["lectura1_flag_tecnico"] = lectura1.isin(grupo_tecnico).astype("int8")
+    df["lectura1_flag_inaccesible"] = lectura1.isin(grupo_inaccesible).astype("int8")
+    df["lectura1_flag_admin"] = lectura1.isin(grupo_admin).astype("int8")
+    df["lectura1_sin_obs"] = lectura1.isna().astype("int8")
+
+    df["lectura2_flag_fraude"] = lectura2.isin(grupo_fraude).astype("int8")
+    df["lectura2_flag_tecnico"] = lectura2.isin(grupo_tecnico).astype("int8")
+    df["lectura2_flag_inaccesible"] = lectura2.isin(grupo_inaccesible).astype("int8")
+    df["lectura2_flag_admin"] = lectura2.isin(grupo_admin).astype("int8")
+    df["lectura2_sin_obs"] = lectura2.isna().astype("int8")
+
+    cc = df["codconsumo"]
+    df["codconsumo_flag_c_normal"] = cc.eq("Consumo normal").astype("int8")
+    df["codconsumo_flag_c_alto"] = cc.eq("Alto consumo").astype("int8")
+    df["codconsumo_flag_c_bajo"] = cc.eq("Bajo consumo").astype("int8")
+    df["codconsumo_flag_c_avg"] = cc.eq("Cmo prom hist").astype("int8")
+
+    if "indicador" in df.columns:
+        df["indicador"] = df["indicador"].replace({"X": 1}).fillna(0).astype("int8")
+
     return df
 
 
-def get_fecha_fraud_list(df_ordenes, df_consumo=None, cant_periodos=12, cutoff_max=None, min_date_consumo=None):
+def get_fecha_fraud_list(
+    df_ordenes,
+    df_consumo=None,
+    cant_periodos=12,
+    cutoff_max=None,
+    min_date_consumo=None,
+    fecha_ancla_ordenes=None,
+):
     """
-    Fechas de corte válidas: con inspecciones y al menos cant_periodos meses de consumo previo.
-    Se puede usar min_date_consumo (timestamp) en lugar de df_consumo para evitar cargar todo el consumo.
+    Fechas de corte en ``df_ordenes`` con ``date`` >= umbral.
+
+    Notebook Bogotá: ``min_date = fecha_ancla + DateOffset(months=cant_periodos)`` (p. ej. ancla ``2021-01-01``).
+
+    Alternativa empírica: ``min_date = min(consumo) + DateOffset(months=cant_periodos)`` usando
+    ``min_date_consumo`` o ``df_consumo``.
     """
     if df_ordenes.empty:
         return []
-    if min_date_consumo is not None:
+    if fecha_ancla_ordenes is not None:
+        min_date_data = pd.to_datetime(fecha_ancla_ordenes) + pd.DateOffset(months=cant_periodos)
+    elif min_date_consumo is not None:
         min_date_data = min_date_consumo + pd.DateOffset(months=cant_periodos)
     elif df_consumo is not None and not df_consumo.empty:
         min_date_data = df_consumo["date"].min() + pd.DateOffset(months=cant_periodos)
@@ -405,6 +490,60 @@ def get_fecha_fraud_list(df_ordenes, df_consumo=None, cant_periodos=12, cutoff_m
     if cutoff_max is not None:
         fechas = [f for f in fechas if f <= str(pd.to_datetime(cutoff_max).date())]
     return fechas
+
+
+def _df_consumo_g_por_uso_notebook(full_ventana: pd.DataFrame, fecha_fraud: pd.Timestamp) -> pd.DataFrame:
+    """Agregados consumo_12m / 6m / 3m por ``uso`` (notebook: horizontes últimos 12 y 6 meses)."""
+    v = full_ventana.copy()
+    out_cols = [
+        "uso",
+        "consumo_12m_ts_mean",
+        "consumo_12m_ts_max",
+        "consumo_6m_ts_mean",
+        "consumo_6m_ts_max",
+        "consumo_3m_ts_mean",
+        "consumo_3m_ts_max",
+    ]
+    if v.empty:
+        return pd.DataFrame(columns=out_cols)
+
+    v["uso"] = v["uso"].astype(str).str.strip()
+    v.loc[v["uso"].eq("") | v["uso"].isna(), "uso"] = "sin_uso"
+
+    fecha_fraud = pd.to_datetime(fecha_fraud)
+    consumo_anual = (
+        v.groupby(["uso", "contrato"])["consumo"].sum().groupby(level=0).agg(["mean", "max"])
+    )
+    consumo_anual.columns = ["consumo_12m_ts_mean", "consumo_12m_ts_max"]
+    ix = consumo_anual.index
+
+    d6 = fecha_fraud - pd.DateOffset(months=12)
+    sub6 = v[v["date"] >= d6]
+    if sub6.empty:
+        consumo_6m = pd.DataFrame(
+            np.nan, index=ix, columns=["consumo_6m_ts_mean", "consumo_6m_ts_max"]
+        )
+    else:
+        consumo_6m = (
+            sub6.groupby(["uso", "contrato"])["consumo"].sum().groupby(level=0).agg(["mean", "max"])
+        )
+        consumo_6m.columns = ["consumo_6m_ts_mean", "consumo_6m_ts_max"]
+        consumo_6m = consumo_6m.reindex(ix)
+
+    d3 = fecha_fraud - pd.DateOffset(months=6)
+    sub3 = v[v["date"] >= d3]
+    if sub3.empty:
+        consumo_3m = pd.DataFrame(
+            np.nan, index=ix, columns=["consumo_3m_ts_mean", "consumo_3m_ts_max"]
+        )
+    else:
+        consumo_3m = (
+            sub3.groupby(["uso", "contrato"])["consumo"].sum().groupby(level=0).agg(["mean", "max"])
+        )
+        consumo_3m.columns = ["consumo_3m_ts_mean", "consumo_3m_ts_max"]
+        consumo_3m = consumo_3m.reindex(ix)
+
+    return pd.concat([consumo_anual, consumo_6m, consumo_3m], axis=1).reset_index()
 
 
 def create_dataset_wide_for_cutoff(
@@ -418,34 +557,35 @@ def create_dataset_wide_for_cutoff(
     max_ctas=None,
 ):
     """
-    Wide por fecha de corte.
+    Wide por fecha de corte (notebook Bogotá: ventana ``cant_periodos`` meses, pivote primer semestre → 12 ``*_anterior``).
 
-    Train e inference construyen el wide completo en esta función (incluye proporciones y calendario).
+    Al inicio valida columnas en ``df_consumo`` (flags + ``vars_consumo``) y, si ``mode=='train'``, en ``df_ordenes``.
     """
     fecha_fraud = pd.to_datetime(fecha_fraud)
-    date_inicial = fecha_fraud - pd.DateOffset(months=cant_periodos)
+    date_inicial = fecha_fraud - pd.DateOffset(months=int(cant_periodos))
+
+    if df_consumo is None or df_consumo.empty:
+        return pd.DataFrame()
+
+    wide_consumo_cols = tuple(
+        dict.fromkeys(list(WIDE_ETIQUETADO_REQUIRED_COLUMNS) + list(vars_consumo))
+    )
+    _require_columns(
+        df_consumo,
+        wide_consumo_cols,
+        context="create_dataset_wide_for_cutoff (df_consumo debe incluir flags y vars_consumo)",
+    )
+    if mode == "train":
+        _require_columns(
+            df_ordenes,
+            vars_ordenes,
+            context="create_dataset_wide_for_cutoff (df_ordenes)",
+        )
 
     df_consumo_ventana = df_consumo[
         (df_consumo["date"] < fecha_fraud) & (df_consumo["date"] >= date_inicial)
     ].copy()
-
-    consumo_anual = (
-        df_consumo_ventana.groupby(["categoria", "contrato"])["consumo"].sum().groupby(level=0).agg(["mean", "max"])
-    )
-    consumo_anual.columns = ["consumo_12m_ts_mean", "consumo_12m_ts_max"]
-    date_6m = fecha_fraud - pd.DateOffset(months=6)
-    consumo_6m = (
-        df_consumo_ventana[df_consumo_ventana["date"] >= date_6m]
-        .groupby(["categoria", "contrato"])["consumo"].sum().groupby(level=0).agg(["mean", "max"])
-    )
-    consumo_6m.columns = ["consumo_6m_ts_mean", "consumo_6m_ts_max"]
-    date_3m = fecha_fraud - pd.DateOffset(months=3)
-    consumo_3m = (
-        df_consumo_ventana[df_consumo_ventana["date"] >= date_3m]
-        .groupby(["categoria", "contrato"])["consumo"].sum().groupby(level=0).agg(["mean", "max"])
-    )
-    consumo_3m.columns = ["consumo_3m_ts_mean", "consumo_3m_ts_max"]
-    df_consumo_g = pd.concat([consumo_anual, consumo_6m, consumo_3m], axis=1).reset_index()
+    df_consumo_g = _df_consumo_g_por_uso_notebook(df_consumo_ventana, fecha_fraud)
 
     df_etiquetado = df_consumo_ventana.copy()
     if mode == "train":
@@ -466,112 +606,127 @@ def create_dataset_wide_for_cutoff(
     if df_etiquetado.empty:
         return pd.DataFrame()
 
-    agg_cols = [c for c in ["m3_fact_tipo", "cod_problema", "estatus"] if c in df_etiquetado.columns]
+    uso_series = df_etiquetado["uso"].astype(str).str.strip()
+    df_etiquetado["_uso_join"] = uso_series.replace("", "sin_uso").fillna("sin_uso")
+
     df_static_vars = df_etiquetado.loc[df_etiquetado.groupby("contrato")["date"].idxmax()]
-    df_cant = df_etiquetado[["contrato"]].drop_duplicates().reset_index(drop=True)
-    if agg_cols:
-        df_nunique = df_etiquetado.groupby("contrato")[agg_cols].nunique().reset_index()
-        df_nunique = df_nunique.rename(columns={
-            "m3_fact_tipo": "cant_m3_fact_tipo",
-            "cod_problema": "cant_cod_problema",
-            "estatus": "cant_estatus",
-        })
-        df_cant = df_cant.merge(df_nunique, on="contrato", how="left")
-    if "tuvo_cm" in df_etiquetado.columns:
-        tuvo_cm = (
-            df_etiquetado.assign(_tuvo_cm=df_etiquetado["tuvo_cm"].astype(str).str.strip().str.upper())
-            .groupby("contrato")["_tuvo_cm"]
-            .apply(lambda x: (x == "S").mean())
-            .reset_index(name="mean_tuvo_cm")
-        )
-        df_cant = df_cant.merge(tuvo_cm, on="contrato", how="left")
 
-    flag_cols = [
-        c for c in df_etiquetado.columns
-        if c.startswith(("fact_flag_", "flag_"))
-    ]
-    if flag_cols:
-        df_flag_means = df_etiquetado.groupby("contrato")[flag_cols].mean().reset_index()
-        df_flag_means = df_flag_means.rename(columns={c: "mean_" + c for c in flag_cols})
-        df_cant = df_cant.merge(df_flag_means, on="contrato")
+    agg_map: dict = {
+        "_uso_join": pd.Series.nunique,
+        "codconsumo": pd.Series.nunique,
+        "lectura1": "count",
+        "lectura2": "count",
+        "indicador": "mean",
+    }
+    for _fc in BOGOTA_CONSUMO_FLAG_COLUMNS:
+        agg_map[_fc] = "mean"
+    df_cant = df_etiquetado.groupby("contrato", sort=False).agg(agg_map).reset_index()
+    ren = {
+        "_uso_join": "cant_uso",
+        "codconsumo": "cant_codconsumo",
+        "lectura1": "cant_anomalia_1lect",
+        "lectura2": "cant_anomalia_2lect",
+        "indicador": "mean_indicador",
+    }
+    ren.update({_fc: "mean_" + _fc for _fc in BOGOTA_CONSUMO_FLAG_COLUMNS})
+    df_cant = df_cant.rename(columns=ren)
 
-    def _cambios(s):
-        vals = s.dropna()
-        if vals.empty:
-            return 0
-        return max((vals != vals.shift()).sum() - 1, 0)
+    def _chg_nb(series):
+        s = series.dropna()
+        if s.empty:
+            return np.nan
+        return (s != s.shift()).sum() - 1
 
-    if agg_cols:
-        df_cambios = (
-            df_etiquetado.groupby("contrato")[agg_cols]
-            .apply(lambda g: g.apply(_cambios))
-            .reset_index()
-        )
-        df_cambios = df_cambios.rename(columns={
-            "m3_fact_tipo": "cambios_m3_fact_tipo",
-            "cod_problema": "cambios_cod_problema",
-            "estatus": "cambios_estatus",
-        })
-        df_cant = df_cant.merge(df_cambios, on="contrato", how="left")
-    vars_consumo_exist = [c for c in vars_consumo if c in df_static_vars.columns]
-    if vars_consumo_exist:
-        df_cant = df_cant.merge(df_static_vars[vars_consumo_exist], on="contrato")
+    camb_spec = {
+        "_uso_join": _chg_nb,
+        "codconsumo": _chg_nb,
+        "lectura1": _chg_nb,
+        "lectura2": _chg_nb,
+    }
+    df_cc = df_etiquetado.groupby("contrato", sort=False).agg(camb_spec).reset_index()
+    df_cc = df_cc.rename(
+        columns={
+            "_uso_join": "cambios_uso",
+            "codconsumo": "cambios_codconsumo",
+            "lectura1": "cambios_anomalia_1lect",
+            "lectura2": "cambios_anomalia_2lect",
+        }
+    )
+    df_cant = df_cant.merge(df_cc, on="contrato", how="left")
+    df_cant = df_cant.merge(df_static_vars[vars_consumo], on="contrato", how="left")
 
     rango_fechas = pd.date_range(start=date_inicial, end=fecha_fraud, freq="MS", inclusive="left")
-    cols_ant = [str(x) + "_anterior" for x in range(cant_periodos, 0, -1)]
-    df_wide = df_etiquetado.pivot_table(index=["contrato"], columns=["date"], values="consumo")
-    df_wide = df_wide.reindex(columns=rango_fechas)
-    df_wide.columns = cols_ant
+    pt = df_etiquetado.pivot_table(index=["contrato"], columns=["date"], values="consumo")
+    pt = pt.reindex(columns=rango_fechas)
+    # Notebook: sólo columnas con mes calendario <= 6 dentro del rango (primer semestre)
+    cols_ps = [c for c in pt.columns if hasattr(c, "month") and pd.Timestamp(c).month <= 6]
+    pt_sem = pt.reindex(columns=cols_ps).copy()
+    ncol = pt_sem.shape[1]
+    if ncol > NUM_ANTERIOR_COLS:
+        pt_sem = pt_sem.iloc[:, -NUM_ANTERIOR_COLS:]
+    elif ncol < NUM_ANTERIOR_COLS:
+        n_pad = NUM_ANTERIOR_COLS - ncol
+        pad_df = pd.DataFrame(np.nan, index=pt_sem.index, columns=list(range(n_pad)))
+        pt_sem = pd.concat([pad_df, pt_sem], axis=1)
+    cols_ant = [f"{x}_anterior" for x in range(NUM_ANTERIOR_COLS, 0, -1)]
+    pt_sem.columns = cols_ant
+    df_wide = pt_sem.reset_index()
     df_wide["date_fizcalizacion"] = fecha_fraud
-    df_wide = df_wide.reset_index().merge(df_cant, on="contrato", how="left")
-    df_wide = df_wide.merge(df_consumo_g, on="categoria", how="left")
+    df_wide = df_wide.merge(df_cant, on="contrato", how="left")
+    df_wide["uso"] = (
+        df_wide["uso"].astype(str).str.strip().replace({"": "sin_uso", "nan": "sin_uso"}).fillna("sin_uso")
+    )
+    if df_consumo_g.empty:
+        raise ValueError(
+            "create_dataset_wide_for_cutoff: agregados por uso vacíos (df_consumo_g); "
+            "revise ventana de consumo y columnas uso/consumo/date."
+        )
+    df_wide = df_wide.merge(df_consumo_g, on="uso", how="left")
 
     df_wide["cant_null"] = df_wide[cols_ant].isnull().sum(axis=1)
     eps = 1e-9
-    cols_3 = [str(x) + "_anterior" for x in range(3, 0, -1)]
+    cols_3 = [f"{x}_anterior" for x in range(3, 0, -1)]
     df_wide["prop_cons_ult3_mean_g"] = df_wide[cols_3].mean(axis=1) / (df_wide["consumo_3m_ts_mean"] + eps)
     df_wide["prop_cons_ult3_max_g"] = df_wide[cols_3].mean(axis=1) / (df_wide["consumo_3m_ts_max"] + eps)
-    cols_6 = [str(x) + "_anterior" for x in range(6, 0, -1)]
+    cols_6 = [f"{x}_anterior" for x in range(6, 0, -1)]
     df_wide["prop_cons_ult6_mean_g"] = df_wide[cols_6].mean(axis=1) / (df_wide["consumo_6m_ts_mean"] + eps)
     df_wide["prop_cons_ult6_max_g"] = df_wide[cols_6].mean(axis=1) / (df_wide["consumo_6m_ts_max"] + eps)
-    cols_12 = [str(x) + "_anterior" for x in range(cant_periodos, 0, -1)]
-    df_wide["prop_cons_ult12_mean_g"] = df_wide[cols_12].mean(axis=1) / (df_wide["consumo_12m_ts_mean"] + eps)
-    df_wide["prop_cons_ult12_max_g"] = df_wide[cols_12].mean(axis=1) / (df_wide["consumo_12m_ts_max"] + eps)
+    cols_12w = cols_ant
+    df_wide["prop_cons_ult12_mean_g"] = df_wide[cols_12w].mean(axis=1) / (df_wide["consumo_12m_ts_mean"] + eps)
+    df_wide["prop_cons_ult12_max_g"] = df_wide[cols_12w].mean(axis=1) / (df_wide["consumo_12m_ts_max"] + eps)
 
     df_wide["num_mes"] = df_wide["date_fizcalizacion"].dt.month
     df_wide["quarter_anio"] = df_wide["date_fizcalizacion"].dt.quarter
     df_wide["semana_anio"] = df_wide["date_fizcalizacion"].dt.isocalendar().week.astype(int)
 
-
     if mode == "train":
-        cols_ordenes = [c for c in vars_ordenes if c in df_ordenes.columns]
         df_wide = df_wide.merge(
-            df_ordenes[cols_ordenes],
+            df_ordenes[vars_ordenes],
             left_on=["contrato", "date_fizcalizacion"],
             right_on=["contrato", "date"],
             how="left",
         )
         if "date" in df_wide.columns:
             df_wide = df_wide.drop(columns=["date"])
-        df_wide["is_fraud"] = df_wide["is_fraud"].fillna(0)
+        if "is_fraud" in df_wide.columns:
+            df_wide["is_fraud"] = df_wide["is_fraud"].fillna(-1)
 
     return df_wide
 
 
-def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_max=None, max_ctas=None):
+def create_train_dataset(
+    interim_dir,
+    processed_dir,
+    cant_periodos=24,
+    cutoff_max=None,
+    max_ctas=None,
+    fecha_ancla_ordenes=None,
+):
     """
-    Punto de entrada train: respeta el orden de funciones del módulo (véase docstring del paquete).
-    Columnas y flags son EMPAGUA (``VARS_*``, ``add_consumo_flags``, interim producido por ``etl.py``).
-
-    Pasos equivalentes a notebooks/desarrollo/2_Contruccion_dataset_v1 — «Construccion data set»:
-
-    1. Lista de fechas de corte; por cada una, chunk wide (consumo + pivot + agregados por categoría).
-    2. ``pd.concat`` de chunks.
-    3. Merge inspecciones, ``cant_null``, merge maestro (columnas demográficas), proporciones ``prop_*``,
-       variables de calendario, ``antiguedad_meses``, ``is_fraud``.fillna(0).
-    4. tsfel / tendencias / constantes y guardado parquet.
-
-    max_ctas: tope de contratos sin inspección en el mes (negativos); None = no muestrear negativos.
+    Train alineado al notebook Bogotá: ``cant_periodos`` meses de ventana, lista de cortes opcionalmente desde
+    ``fecha_ancla_ordenes + cant_periodos``; pivote primer semestre con 12 columnas ``*_anterior``;
+    merge maestro ``VARS_MAESTRO``. Si ``fecha_ancla_ordenes`` es ``None``, los cortes salen de la fecha
+    mínima de consumo en interim y ``cant_periodos``.
     """
     df_ordenes = load_interim_data(interim_dir, "inspecciones")
     if df_ordenes.empty:
@@ -587,15 +742,25 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
     if df_maestro.empty:
         logger.error("No hay maestro en interim. El maestro es una fuente obligatoria; ejecute el ETL para maestro.")
         return None
-    if "categoria" not in df_maestro.columns:
-        logger.error("Maestro sin columna 'categoria'. La fuente maestro debe incluir contrato y categoria.")
-        return None
 
     logger.info("Maestro cargado (%s contratos). Inspecciones cargadas.", len(df_maestro))
-    fecha_list = get_fecha_fraud_list(
-        df_ordenes, df_consumo=None, cant_periodos=cant_periodos,
-        cutoff_max=cutoff_max, min_date_consumo=min_date_consumo
-    )
+    if fecha_ancla_ordenes is None:
+        fecha_list = get_fecha_fraud_list(
+            df_ordenes,
+            df_consumo=None,
+            cant_periodos=cant_periodos,
+            cutoff_max=cutoff_max,
+            min_date_consumo=min_date_consumo,
+        )
+    else:
+        fecha_list = get_fecha_fraud_list(
+            df_ordenes,
+            df_consumo=None,
+            cant_periodos=cant_periodos,
+            cutoff_max=cutoff_max,
+            fecha_ancla_ordenes=fecha_ancla_ordenes,
+            min_date_consumo=None,
+        )
     if not fecha_list:
         logger.warning("No hay fechas de corte válidas.")
         return None
@@ -611,10 +776,6 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
             interim_dir, "consumo", start_date=date_inicial, end_date=fecha_d
         )
         if not df_consumo_ventana.empty:
-            df_consumo_ventana = df_consumo_ventana.merge(
-                df_maestro[["contrato", "categoria"]], on="contrato", how="left"
-            )
-            df_consumo_ventana["categoria"] = df_consumo_ventana["categoria"].fillna("sin_dato")
             add_consumo_flags(df_consumo_ventana)
 
         df_one = create_dataset_wide_for_cutoff(
@@ -647,12 +808,12 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
 
     df_wide.reset_index(drop=True, inplace=True)
     logger.info("Calculando variables de series de tiempo (tsfel); puede tardar varios minutos...")
-    df_wide = llenar_val_vacios_ciclo(df_wide, cant_periodos)
+    df_wide = llenar_val_vacios_ciclo(df_wide, NUM_ANTERIOR_COLS)
     df_wide = compute_change_trend_percentaje_vars(df_wide, CONFIG_CAIDAS)
     df_wide = compute_constant_consumption_vars(df_wide, CONFIG_CONSTANTES)
     df_wide.reset_index(drop=True, inplace=True)
     df_wide["index"] = range(len(df_wide))
-    df_wide = compute_tsfel_consumption_vars(df_wide, cant_periodos)
+    df_wide = compute_tsfel_consumption_vars(df_wide, NUM_ANTERIOR_COLS)
 
     out_dir = os.path.join(processed_dir, "train", f"cutoff={pd.to_datetime(cutoff_max or fecha_list[-1]).strftime('%Y-%m-%d')}")
     os.makedirs(out_dir, exist_ok=True)
@@ -662,10 +823,10 @@ def create_train_dataset(interim_dir, processed_dir, cant_periodos=12, cutoff_ma
     return df_wide
 
 
-def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=12, contratos_list=None, columns_filter=None):
+def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=24, contratos_list=None, columns_filter=None):
     """
     Inferencia: un corte, sin etiqueta. Mismo pipeline genérico que train para ``create_dataset_wide_for_cutoff``
-    (wide completo en una pasada), datos EMPAGUA desde interim (véase docstring del módulo).
+    (wide completo en una pasada), mismas reglas que train (interim Bogotá).
 
     Merge maestro con ``VARS_MAESTRO``; ``columns_filter`` y ``contratos_list`` opcionales antes de tsfel.
     ``cutoff``: ``YYYY-MM-DD``.
@@ -694,8 +855,12 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     meses_cargados = df_consumo["date"].dt.to_period("M").nunique()
     if meses_cargados < cant_periodos:
         logger.warning(
-            "Se requieren %s meses de consumo en el rango [%s, %s], pero solo hay %s meses en interim. Ejecute el ETL para los meses faltantes.",
-            cant_periodos, start_d.strftime("%Y-%m-%d"), end_d.strftime("%Y-%m-%d"), meses_cargados,
+            "Se requieren %s meses de consumo en el rango [%s, %s], pero solo hay %s meses en interim. "
+            "Ejecute el ETL para los meses faltantes.",
+            cant_periodos,
+            start_d.strftime("%Y-%m-%d"),
+            end_d.strftime("%Y-%m-%d"),
+            meses_cargados,
         )
         return None
 
@@ -704,15 +869,8 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
     if df_maestro.empty:
         logger.error("No hay maestro en interim. El maestro es obligatorio para inferencia; ejecute el ETL para maestro.")
         return None
-    if "categoria" not in df_maestro.columns:
-        logger.error("Maestro sin columna 'categoria'. La fuente maestro debe incluir contrato y categoria.")
-        return None
     logger.info("Maestro cargado (%s contratos).", len(df_maestro))
 
-    df_consumo = df_consumo.merge(
-        df_maestro[["contrato", "categoria"]], on="contrato", how="left"
-    )
-    df_consumo["categoria"] = df_consumo["categoria"].fillna("sin_dato")
     add_consumo_flags(df_consumo)
 
     df_wide = create_dataset_wide_for_cutoff(
@@ -752,12 +910,12 @@ def create_inference_dataset(interim_dir, processed_dir, cutoff, cant_periodos=1
 
     df_wide.reset_index(drop=True, inplace=True)
     logger.info("Calculando variables de series de tiempo (tsfel); puede tardar varios minutos...")
-    df_wide = llenar_val_vacios_ciclo(df_wide, cant_periodos)
+    df_wide = llenar_val_vacios_ciclo(df_wide, NUM_ANTERIOR_COLS)
     df_wide = compute_change_trend_percentaje_vars(df_wide, CONFIG_CAIDAS)
     df_wide = compute_constant_consumption_vars(df_wide, CONFIG_CONSTANTES)
     df_wide.reset_index(drop=True, inplace=True)
     df_wide["index"] = range(len(df_wide))
-    df_wide = compute_tsfel_consumption_vars(df_wide, cant_periodos)
+    df_wide = compute_tsfel_consumption_vars(df_wide, NUM_ANTERIOR_COLS)
 
     out_dir = os.path.join(processed_dir, "inference", f"cutoff={pd.to_datetime(cutoff).strftime('%Y-%m-%d')}")
     os.makedirs(out_dir, exist_ok=True)

@@ -1,9 +1,7 @@
 """
-ETL mensual EMPAGUA: inspecciones, consumo y maestro.
-Procesamiento incremental: raw TXT (pipe ``|``) → interim parquet por año/mes.
-Alineado con notebooks/desarrollo/2_Contruccion_dataset_v1 (inspecciones celda 8, consumo 24–28, maestro 53 y 61).
+ETL mensual **Bogotá** (consumo, inspecciones, maestro).
 
-Convención ``data/raw``: ``<fuente>/<fuente>_AAAA_MM.txt``, UTF-8, separador ``|`` (misma forma que ``scripts/format_raw_from_entrega.py`` escribe).
+- **Consumo / maestro / inspecciones:** raw mensual ``.csv`` o ``.txt`` (ver cada ``clean_*``).
 """
 import logging
 import os
@@ -15,38 +13,75 @@ from unidecode import unidecode
 
 logger = logging.getLogger(__name__)
 
-# Raw mensual entregado por fuente (convención acordada con clientes / partición desde notebooks/v3)
 RAW_SEP = "|"
 RAW_ENCODING = "utf-8"
 
-# Resultado de inspección → is_fraud (texto normalizado; notebook celda 8)
-RESULTADO_TEXTO_IS_FRAUD = frozenset(
-    {"ANOMALO", "FRAUDULENTA", "SERVICIO DIRECTO", "MAL ESTADO"}
+# Positivos (``is_fraud`` = 1): texto en ``anomaliacausainefectividad`` igual a uno de estos
+# (tras normalizar: minúsculas, espacios colapsados). Incluye variantes típicas del dato crudo.
+TARGET_1 = (
+    "acuerdo de pago",
+    "posible anomalía en aparato de medición",
+    "posible anomalía en el aparato de medición",
+    "posible anomalía en el aparato de medidor",
+    "posible anoamlía en el aparato de medición",
+    "posible anomalia en el aparato de medicion",
+    "posible anomalía en aparato de medidor",
+    "posible anomalia en aparato de medicion",
+    "medidor en mal estado",
+    "posible anomalía en el aparto de medición",
+    "posible anomalpia en el aparato de medición",
+    "medidor mal instalado",
+    "posible anomalái en el aparato de medición",
+    "bypass",
+    "se recomienda cambio de medidor por la zona",
+    "cambio de medidor",
+    "cambio de medidor por zona",
+    "se recomienda cambio de medior por la zona",
+    "cambio por zona",
+    "requiere cambio de medidor",
+    "cambio por la zona",
+    "cambio por el área correspondiente",
+    "se recomienda cambio de medior por el área encargada",
+    "para cambio por el área correspondiente",
+    "se recomienda cambio de medidor por zona",
+    "conexión clandestina",
+    "acometida con conexión no autorizada",
+    'se ubica cola de manguera "1/2 sin conexión',
+    "clandestina",
+    "hotel con medidor desanclado",
+    "posible medidor manipulado",
+    "obra sin tpo",
+    "obra con tpo",
+    "reprogramar retiro en bolsa de seguridad (n/a)",
+    "reprogramar cambio de medidor",
+    "reprogramar retiro de medidor",
+    "reprogramar para recoger medidor",
+    'reprogramar taponamiento 1"',
+    "retiro del medidor en bolsa de seguridad",
+    "se recomienda retiro del medidor por área correspondiente",
+    "servicio directo",
+    "taponar",
+    "taponamiento a manguera no ingresa a predio",
+    "totalizadoras",
 )
 
-# desc_categoria → categoría agregada para modelado (notebook celda 61)
-MAP_DESC_CATEGORIA = {
-    "Residencia": "Residencial",
-    "Casa de Alquiler y locales": "Residencial",
-    "Locales de cualquier tipo": "Comercial",
-    "Restaurante": "Comercial",
-    "Bar o discoteca": "Comercial",
-    "Car Wash": "Comercial",
-    "Lavanderia": "Comercial",
-    "Spa o Salon de belleza": "Comercial",
-    "Gimnasio": "Comercial",
-    "Auto Hotel": "Comercial",
-    "Hotel de paso": "Comercial",
-    "Centro Comercial": "Comercial",
-    "Gobierno": "Institucional",
-    "Centros de Estudio Privado": "Institucional",
-    "Hospital Privado": "Institucional",
-    "Empresa de Seguridad": "Institucional",
-    "Purificadora de agua": "Institucional",
-    "Fabricas de todo tipo": "Industrial",
-    "Edificios de todo tipo": "Otros",
-}
+TARGET_1_NORMALIZED = frozenset(
+    " ".join(str(t).strip().lower().split()) for t in TARGET_1
+)
 
+
+def _normalize_anomalia_label(x) -> str:
+    if pd.isna(x):
+        return ""
+    return " ".join(str(x).strip().lower().split())
+
+
+def _first_nonnull(series: pd.Series):
+    """Primer valor no nulo de la serie (para agg por grupo)."""
+    s = series.dropna()
+    if s.empty:
+        return float("nan")
+    return s.iloc[0]
 
 # ============================================================================
 # ETL MENSUAL - Funciones para procesamiento incremental por mes
@@ -57,21 +92,17 @@ def get_pending_months(raw_dir, interim_dir, source_name, overwrite=False):
     Compara archivos en raw/ vs parquets en interim/
     Retorna lista de (year, month) a procesar.
 
-    Args:
-        raw_dir: directorio con archivos raw de la fuente (ej: data/raw/inspecciones/)
-        interim_dir: directorio base con parquets procesados (ej: data/interim/)
-        source_name: nombre de la fuente (ej: 'inspecciones', 'consumo')
-        overwrite: si True, devuelve todos los meses en raw (para reprocesar); si False, solo los pendientes.
-
-    Returns:
-        Lista de tuplas (year, month) a procesar
+    Detecta ``{source}_AAAA_MM.csv`` y ``{source}_AAAA_MM.txt``.
     """
-    raw_files = glob.glob(os.path.join(raw_dir, f"{source_name}_*.txt"))
     raw_months = set()
-
-    for f in raw_files:
+    for f in glob.glob(os.path.join(raw_dir, f"{source_name}_*.csv")):
         basename = os.path.basename(f)
-        match = re.search(rf"{source_name}_(\d{{4}})_(\d{{2}})\.txt", basename)
+        match = re.search(rf"{source_name}_(\d{{4}})_(\d{{2}})\.csv$", basename, re.IGNORECASE)
+        if match:
+            raw_months.add((int(match.group(1)), int(match.group(2))))
+    for f in glob.glob(os.path.join(raw_dir, f"{source_name}_*.txt")):
+        basename = os.path.basename(f)
+        match = re.search(rf"{source_name}_(\d{{4}})_(\d{{2}})\.txt$", basename, re.IGNORECASE)
         if match:
             raw_months.add((int(match.group(1)), int(match.group(2))))
 
@@ -92,163 +123,165 @@ def get_pending_months(raw_dir, interim_dir, source_name, overwrite=False):
 
 def clean_inspecciones(df):
     """
-    Exige columnas ``id_servicio``, ``fecha``, ``resultado``, ``id_inspeccion``, ``tiene_sancion``
-    (las dos últimas no se transforman aquí; se conservan si vienen en el DataFrame).
+    Inspecciones **Bogotá** (histórico vigencia mensual).
 
-    Pasos: nombres de columna strip + lower; ``fecha`` con ``dayfirst=True``; filas sin fecha válida fuera;
-    ``id_servicio`` → ``contrato`` (str); ``date`` agregación mensual desde el calendario de ``fecha``;
-    ``is_fraud`` = 1 si ``resultado`` coincide **exactamente** con algún texto en
-    ``RESULTADO_TEXTO_IS_FRAUD``; una fila por par (``contrato``, ``date``) quedándose la de
-    ``is_fraud`` máximo; descarta ``contrato`` vacío.
-
-    Entrada: filas leídas desde raw TXT ``|`` UTF-8.
+    Cabeceras: ``[unidecode(x) for x in columns.str.lower()]``; exige ``vigencia_inspeccion``,
+    ``ctacontrato`` y ``anomaliacausainefectividad``. ``is_fraud = 1`` si el texto está en
+    ``TARGET_1`` (véase ``TARGET_1_NORMALIZED``).
+    ``date`` desde ``vigencia_inspeccion`` con ``%Y%m``; una fila por (``contrato``, ``date``) vía ``idxmax``.
     """
-    df = df.copy()
-    df.columns = df.columns.astype(str).str.strip().str.lower()
+    df_ordenes = df.copy()
+    df_ordenes.columns = [unidecode(x) for x in df_ordenes.columns.astype(str).str.lower()]
 
-    required_cols = {"id_servicio", "fecha", "resultado", "id_inspeccion", "tiene_sancion"}
-    missing = required_cols - set(df.columns)
+    required = {"vigencia_inspeccion", "ctacontrato", "anomaliacausainefectividad"}
+    missing = required - set(df_ordenes.columns)
     if missing:
-        raise ValueError(f"Inspecciones EMPAGUA: faltan columnas requeridas {sorted(missing)}")
+        raise ValueError(f"Inspecciones Bogotá: faltan columnas requeridas {sorted(missing)}")
 
-    df["id_servicio"] = df["id_servicio"].astype(str)
-    df = df.dropna(subset=["fecha"]).reset_index(drop=True)
-    df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce", dayfirst=True)
-    df = df.dropna(subset=["fecha"]).reset_index(drop=True)
-
-    df.rename(columns={"id_servicio": "contrato"}, inplace=True)
-
-    df["date"] = pd.to_datetime(
-        df["fecha"].dt.year.astype(str) + "-" + df["fecha"].dt.month.astype(str)
+    df_ordenes = df_ordenes.dropna(subset=["vigencia_inspeccion"]).reset_index(drop=True)
+    df_ordenes["vigencia_inspeccion"] = pd.to_numeric(
+        df_ordenes["vigencia_inspeccion"], errors="coerce"
+    )
+    df_ordenes = df_ordenes.dropna(subset=["vigencia_inspeccion"]).reset_index(drop=True)
+    df_ordenes["vigencia_inspeccion"] = (
+        df_ordenes["vigencia_inspeccion"].astype(int).astype(str)
     )
 
-    df["is_fraud"] = df["resultado"].isin(RESULTADO_TEXTO_IS_FRAUD).astype(int)
+    df_ordenes["ctacontrato"] = df_ordenes["ctacontrato"].astype(str)
+    df_ordenes.rename(columns={"ctacontrato": "contrato"}, inplace=True)
 
-    df.reset_index(drop=True, inplace=True)
-    df = df.loc[df.groupby(["contrato", "date"])["is_fraud"].idxmax()].reset_index(drop=True)
+    _norm = df_ordenes["anomaliacausainefectividad"].map(_normalize_anomalia_label)
+    df_ordenes["is_fraud"] = _norm.isin(TARGET_1_NORMALIZED).astype(int)
 
-    df["contrato"] = df["contrato"].astype(str).str.strip()
-    df = df[df["contrato"].str.len() > 0].reset_index(drop=True)
+    df_ordenes["date"] = pd.to_datetime(
+        df_ordenes["vigencia_inspeccion"], format="%Y%m", errors="coerce"
+    )
+    df_ordenes = df_ordenes.dropna(subset=["date"]).reset_index(drop=True)
 
-    return df
+    df_ordenes = df_ordenes.reset_index(drop=True)
+    df_ordenes = df_ordenes.loc[
+        df_ordenes.groupby(["contrato", "date"])["is_fraud"].idxmax()
+    ].reset_index(drop=True)
+
+    df_ordenes["contrato"] = df_ordenes["contrato"].str.strip()
+    df_ordenes = df_ordenes[df_ordenes["contrato"].str.len() > 0].reset_index(drop=True)
+
+    return df_ordenes
 
 
 def clean_consumo(df):
     """
-    Exige ``id_servicio``, ``fcm_anio``, ``fcm_mes``, ``fcm_m3_fact``, ``m3_fact_tipo``,
-    ``cod_problema``, ``estatus``, ``tuvo_cm``.
+    Limpieza consumo **Bogotá**.
 
-    Pasos: columnas strip + lower; rename a ``contrato``, ``ano``, ``mes``, ``consumo``;
-    ``date`` primer día del mes desde año/mes numéricos (filtra año > 0 y mes 1–12);
-    si ``consumo`` viene como texto, toma la parte antes de la primera coma y luego numérico;
-    filtra ``consumo`` no nulo y ``>= 0``, castea a entero;
-    ``cod_problema`` numérico coerce; ``estatus``, ``m3_fact_tipo``, ``tuvo_cm`` strip + upper;
-    ``drop_duplicates(['contrato','date'], keep='first')`` y orden por ``date``.
+    Normaliza cabeceras; exige ``ctacontrato``, ``vig``, ``consumo``, ``periodicidad``.
+    Dedup por ``(contrato, vig)``: ``consumo`` suma; demás columnas de perfil con ``first`` / ``indicador`` con primer no nulo.
+    Filtra ``consumo >= 0`` y ``periodicidad`` equivalente a 2 (bimestral u otra codificación numérica).
 
-    Entrada: raw mensual TXT ``|`` UTF-8.
+    Solo vigencias de **primer semestre calendario** (``month`` 1–6): el ciclo Bogotá bimestral
+    no usa meses 7–12 en consumo.
     """
-    df = df.copy()
-    df.columns = df.columns.astype(str).str.strip().str.lower()
+    df_consumo = df.copy()
+    df_consumo.columns = [unidecode(str(c).strip().lower()) for c in df_consumo.columns]
 
-    required_cols = {
-        "id_servicio",
-        "fcm_anio",
-        "fcm_mes",
-        "fcm_m3_fact",
-        "m3_fact_tipo",
-        "cod_problema",
-        "estatus",
-        "tuvo_cm",
-    }
-    missing = required_cols - set(df.columns)
+    required = {"ctacontrato", "vig", "consumo", "periodicidad"}
+    missing = required - set(df_consumo.columns)
     if missing:
-        raise ValueError(f"Consumo EMPAGUA: faltan columnas requeridas {sorted(missing)}")
+        raise ValueError(f"Consumo Bogotá: faltan columnas requeridas {sorted(missing)}")
 
-    df.rename(
-        columns={
-            "id_servicio": "contrato",
-            "fcm_anio": "ano",
-            "fcm_mes": "mes",
-            "fcm_m3_fact": "consumo",
-        },
-        inplace=True,
-    )
+    df_consumo["ctacontrato"] = df_consumo["ctacontrato"].astype(str)
+    df_consumo = df_consumo.dropna(subset=["vig"]).reset_index(drop=True)
 
-    df["contrato"] = df["contrato"].astype(str).str.strip()
-    df = df[df["contrato"].str.len() > 0].dropna(subset=["contrato"]).reset_index(drop=True)
+    df_consumo["vig"] = pd.to_numeric(df_consumo["vig"], errors="coerce")
+    df_consumo = df_consumo.dropna(subset=["vig"]).reset_index(drop=True)
+    df_consumo["vig"] = df_consumo["vig"].astype(int).astype(str)
 
-    df["month"] = pd.to_numeric(df["mes"], errors="coerce").fillna(0).astype(int)
-    df["year"] = pd.to_numeric(df["ano"], errors="coerce").fillna(0).astype(int)
-    df["date"] = pd.to_datetime(
-        df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01",
-        errors="coerce",
-    )
-    df = df.dropna(subset=["date"]).reset_index(drop=True)
-    df = df[(df["year"] > 0) & df["month"].between(1, 12)].copy()
+    df_consumo["consumo"] = pd.to_numeric(df_consumo["consumo"], errors="coerce").astype(float)
 
-    if df["consumo"].dtype == object or (
-        hasattr(df["consumo"].dtype, "name") and df["consumo"].dtype.name == "string"
+    df_consumo = df_consumo.rename(columns={"ctacontrato": "contrato"})
+    df_consumo = df_consumo[df_consumo["vig"] != "202313"].copy()
+    df_consumo = df_consumo[df_consumo["vig"] != "202413"].copy()
+
+    df_consumo["date"] = pd.to_datetime(df_consumo["vig"], format="%Y%m", errors="coerce")
+    df_consumo = df_consumo.dropna(subset=["date"]).reset_index(drop=True)
+    df_consumo["year"] = df_consumo["date"].dt.year
+    df_consumo["month"] = df_consumo["date"].dt.month
+    df_consumo = df_consumo.loc[df_consumo["month"] <= 6].copy().reset_index(drop=True)
+
+    df_consumo["contrato"] = df_consumo["contrato"].str.strip()
+    df_consumo = df_consumo[df_consumo["contrato"].str.len() > 0].reset_index(drop=True)
+
+    agg_map: dict = {"consumo": "sum"}
+    if "indicador" in df_consumo.columns:
+        agg_map["indicador"] = _first_nonnull
+    for col in (
+        "ciclo",
+        "poblacion",
+        "zona",
+        "uso",
+        "estrato",
+        "periodicidad",
+        "codconsumo",
+        "lectura1",
+        "lectura2",
+        "date",
+        "year",
+        "month",
     ):
-        df["consumo"] = df["consumo"].astype(str).str.split(",").str[0]
-    df["consumo"] = pd.to_numeric(df["consumo"], errors="coerce")
-    df = df[df["consumo"].notna() & (df["consumo"] >= 0)].copy()
-    df["consumo"] = df["consumo"].fillna(0).astype(int)
+        if col in df_consumo.columns and col not in agg_map:
+            agg_map[col] = "first"
 
-    df["cod_problema"] = pd.to_numeric(df["cod_problema"], errors="coerce")
-    df["estatus"] = df["estatus"].astype(str).str.strip().str.upper()
-    df["m3_fact_tipo"] = df["m3_fact_tipo"].astype(str).str.strip().str.upper()
-    df["tuvo_cm"] = df["tuvo_cm"].astype(str).str.strip().str.upper()
+    df_consumo = (
+        df_consumo.groupby(["contrato", "vig"], sort=False)
+        .agg(agg_map)
+        .reset_index()
+    )
 
-    df = df.drop_duplicates(subset=["contrato", "date"], keep="first").reset_index(drop=True)
-    df = df.sort_values("date").reset_index(drop=True)
-    return df
+    df_consumo = df_consumo[df_consumo["consumo"] >= 0].copy()
+    per = pd.to_numeric(df_consumo["periodicidad"], errors="coerce")
+    df_consumo = df_consumo[per == 2].copy()
+
+    df_consumo = df_consumo.sort_values(["date", "contrato"]).reset_index(drop=True)
+    return df_consumo
 
 
 def clean_maestro(df):
     """
-    Exige ``id_servicio``, ``fecha_medidor``, ``desc_categoria``, ``municipio``, ``colonia``,
-    ``zona``, ``tipo``, ``es_digital`` (cabecera en raw como ``id_servicio``; aquí se renombra a ``contrato``).
+    Maestro **Bogotá**.
 
-    Pasos: nombres de columna ``unidecode(strip(lower))``; ``contrato`` str sin vacíos;
-    ``fecha_medidor`` a datetime; ``categoria`` desde ``desc_categoria`` vía ``MAP_DESC_CATEGORIA``,
-    valores no mapeados → ``Otros``; ``drop_duplicates`` por ``contrato`` con ``keep='last'``.
-
-    Entrada: raw mensual TXT ``|`` UTF-8.
+    ``columns = [unidecode(x) for x in columns.str.lower()]``; ``ctacontrato`` como str;
+    rename a ``contrato``; descarta contratos vacíos y duplicados por ``contrato`` (``keep='last'``).
     """
-    df = df.copy()
-    df.columns = [unidecode(str(x).strip().lower()) for x in df.columns]
+    df_maestro = df.copy()
+    df_maestro.columns = [unidecode(x) for x in df_maestro.columns.astype(str).str.lower()]
 
-    required_cols = {
-        "id_servicio",
-        "fecha_medidor",
-        "desc_categoria",
-        "municipio",
-        "colonia",
-        "zona",
-        "tipo",
-        "es_digital",
-    }
-    missing = required_cols - set(df.columns)
-    if missing:
-        raise ValueError(f"Maestro EMPAGUA: faltan columnas requeridas {sorted(missing)}")
+    if "ctacontrato" not in df_maestro.columns:
+        raise ValueError(
+            f"Maestro Bogotá: falta ctacontrato; columnas: {sorted(df_maestro.columns.tolist())}"
+        )
 
-    df["id_servicio"] = df["id_servicio"].astype(str)
-    df.rename(columns={"id_servicio": "contrato"}, inplace=True)
+    df_maestro["ctacontrato"] = df_maestro["ctacontrato"].astype(str)
+    df_maestro.rename(columns={"ctacontrato": "contrato"}, inplace=True)
 
-    df["contrato"] = df["contrato"].str.strip()
-    df = df[df["contrato"].str.len() > 0].dropna(subset=["contrato"]).reset_index(drop=True)
+    df_maestro["contrato"] = df_maestro["contrato"].str.strip()
+    df_maestro = df_maestro[
+        df_maestro["contrato"].str.len() > 0
+    ].dropna(subset=["contrato"]).reset_index(drop=True)
 
-    df["fecha_medidor"] = pd.to_datetime(df["fecha_medidor"], errors="coerce")
+    df_maestro = df_maestro.drop_duplicates(subset=["contrato"], keep="last").reset_index(drop=True)
+    return df_maestro
 
-    dc = df["desc_categoria"]
-    df["categoria"] = "Otros"
-    ok = dc.notna()
-    df.loc[ok, "categoria"] = (
-        dc.loc[ok].astype(str).str.strip().map(MAP_DESC_CATEGORIA).fillna("Otros")
-    )
 
-    df = df.drop_duplicates(subset=["contrato"], keep="last").reset_index(drop=True)
-    return df
+def _resolve_raw_file(raw_dir, source_name, year, month):
+    """Prefiere ``.csv`` (consumo Bogotá); si no, ``.txt`` (legacy)."""
+    sub = os.path.join(raw_dir, source_name)
+    stem = f"{source_name}_{year}_{month:02d}"
+    csv_p = os.path.join(sub, stem + ".csv")
+    txt_p = os.path.join(sub, stem + ".txt")
+    if os.path.isfile(csv_p):
+        return csv_p, "csv"
+    if os.path.isfile(txt_p):
+        return txt_p, "pipe"
+    return None, None
 
 
 def process_month(raw_dir, interim_dir, source_name, year, month, clean_func, overwrite=False):
@@ -265,9 +298,9 @@ def process_month(raw_dir, interim_dir, source_name, year, month, clean_func, ov
         overwrite: si True, reprocesa aunque ya exista
 
     Returns:
-        True si procesó, False si saltó
+        True si guardó parquet con al menos un registro; False si saltó, sin raw, o limpieza vacía.
     """
-    raw_file = os.path.join(raw_dir, source_name, f"{source_name}_{year}_{month:02d}.txt")
+    raw_file, raw_mode = _resolve_raw_file(raw_dir, source_name, year, month)
     output_dir = os.path.join(interim_dir, source_name, f"year={year}", f"month={month:02d}")
     output_file = os.path.join(output_dir, f"{source_name}.parquet")
 
@@ -275,13 +308,37 @@ def process_month(raw_dir, interim_dir, source_name, year, month, clean_func, ov
         logger.info("%s %s-%s ya procesado, saltando.", source_name, year, month)
         return False
 
-    if not os.path.exists(raw_file):
-        logger.warning("%s no existe, saltando.", raw_file)
+    if raw_file is None:
+        logger.warning(
+            "No hay raw %s para %s-%02d (.csv ni .txt), saltando.",
+            source_name,
+            year,
+            month,
+        )
         return False
 
-    logger.debug("Procesando %s %s-%s...", source_name, year, month)
-    df = pd.read_csv(raw_file, sep=RAW_SEP, encoding=RAW_ENCODING, encoding_errors="replace")
+    logger.debug("Procesando %s %s-%s desde %s...", source_name, year, month, raw_file)
+    if raw_mode == "csv":
+        df = pd.read_csv(
+            raw_file, encoding=RAW_ENCODING, encoding_errors="replace", low_memory=False
+        )
+    else:
+        df = pd.read_csv(
+            raw_file, sep=RAW_SEP, encoding=RAW_ENCODING, encoding_errors="replace"
+        )
     df = clean_func(df)
+
+    if df is None or len(df) == 0:
+        logger.warning(
+            "%s %s-%02d: sin registros tras limpieza; no se escribe parquet.",
+            source_name,
+            year,
+            month,
+        )
+        if os.path.isfile(output_file):
+            os.remove(output_file)
+            logger.info("Eliminado parquet previo (evitar datos obsoletos): %s", output_file)
+        return False
 
     os.makedirs(output_dir, exist_ok=True)
     df.to_parquet(output_file, index=False)

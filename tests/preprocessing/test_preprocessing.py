@@ -18,17 +18,21 @@ def test_preprocess_model_input_filters_and_string_columns():
             "cant_null": [3, 7, 3],
             "cant_ceros_12": [5, 5, 10],
             "zona": ["10.0", "1", "1"],
-            "municipio": [None, "A", "A"],
-            "tipo": ["R", "R", "R"],
-            "es_digital": [0, 0, 0],
-            "desc_categoria": ["c1", "c1", "c1"],
+            "oc_nme_barrio": [None, "B", "B"],
+            "oc_nme_localidad": ["L", "L", "L"],
+            "md_marca": ["m", "m", "m"],
+            "md_material": ["mat", "mat", "mat"],
+            "md_diametro": ["d", "d", "d"],
+            "poblacion": ["p", "p", "p"],
+            "uso": ["u", "u", "u"],
+            "estrato": ["1", "1", "1"],
         }
     )
     out = preprocess_model_input(df)
     assert len(out) == 1
     assert out["cant_null"].iloc[0] == 3
     assert out["zona"].iloc[0] == "10"
-    assert out["municipio"].iloc[0] == "sin_dato"
+    assert out["oc_nme_barrio"].iloc[0] == "sin_dato"
 
 
 def test_preprocess_model_input_inclusive_thresholds():
@@ -38,10 +42,14 @@ def test_preprocess_model_input_inclusive_thresholds():
             "cant_null": [6],
             "cant_ceros_12": [9],
             "zona": ["1"],
-            "municipio": ["M"],
-            "tipo": ["T"],
-            "es_digital": [0],
-            "desc_categoria": ["d"],
+            "oc_nme_barrio": ["B"],
+            "oc_nme_localidad": ["L"],
+            "md_marca": ["m"],
+            "md_material": ["mat"],
+            "md_diametro": ["d"],
+            "poblacion": ["p"],
+            "uso": ["u"],
+            "estrato": ["2"],
         }
     )
     out = preprocess_model_input(df)

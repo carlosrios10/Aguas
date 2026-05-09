@@ -86,27 +86,27 @@ def test_validate_raw_detects_missing_columns(validate_raw_mod, tmp_path):
 
 
 def test_check_interim_reports_missing_months(check_interim_mod, tmp_path):
-    interim = tmp_path / "interim" / "consumo" / "year=2025" / "month=07"
+    # Ventana bajo cutoff 2025-06 con cant_periodos=2 espera meses 4 y 5; sólo hay partición abril.
+    interim = tmp_path / "interim" / "consumo" / "year=2025" / "month=04"
     interim.mkdir(parents=True)
     pd.DataFrame({"x": [1]}).to_parquet(interim / "consumo.parquet", index=False)
-    mdir = tmp_path / "interim" / "maestro" / "year=2025" / "month=07"
+    mdir = tmp_path / "interim" / "maestro" / "year=2025" / "month=04"
     mdir.mkdir(parents=True)
     pd.DataFrame({"contrato": ["1"], "categoria": ["A"]}).to_parquet(mdir / "maestro.parquet", index=False)
-    report = check_interim_mod.check_interim(str(tmp_path / "interim"), "2025-09-01", 2)
-    # Esperados: 2025-07 y 2025-08, falta 2025-08
-    assert "2025-08" in report["missing_months"]
+    report = check_interim_mod.check_interim(str(tmp_path / "interim"), "2025-06-01", 2)
+    assert "2025-05" in report["missing_months"]
     assert report["ok"] is False
 
 
 def test_check_interim_ok_with_full_window(check_interim_mod, tmp_path):
-    for mm in (7, 8):
+    for mm in (4, 5):
         interim = tmp_path / "interim" / "consumo" / "year=2025" / f"month={mm:02d}"
         interim.mkdir(parents=True)
         pd.DataFrame({"x": [1]}).to_parquet(interim / "consumo.parquet", index=False)
-    mdir = tmp_path / "interim" / "maestro" / "year=2025" / "month=08"
+    mdir = tmp_path / "interim" / "maestro" / "year=2025" / "month=05"
     mdir.mkdir(parents=True)
     pd.DataFrame({"contrato": ["1"], "categoria": ["A"]}).to_parquet(mdir / "maestro.parquet", index=False)
-    report = check_interim_mod.check_interim(str(tmp_path / "interim"), "2025-09-01", 2)
+    report = check_interim_mod.check_interim(str(tmp_path / "interim"), "2025-06-01", 2)
     assert report["missing_months"] == []
     assert report["ok"] is True
 

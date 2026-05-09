@@ -28,11 +28,14 @@ def _extract_ym_from_path(path: str) -> tuple[int, int] | None:
 
 
 def expected_months(cutoff: str, cant_periodos: int) -> list[tuple[int, int]]:
-    """Meses cerrados previos al mes de inferencia: `cant_periodos` meses sin incluir el mes del cutoff."""
+    """
+    Meses cerrados previos al mes de inferencia: `cant_periodos` meses sin incluir el mes del cutoff.
+    Sólo meses 1–6: la entrega POC no tiene particiones jul–dic en disco.
+    """
     end = pd.to_datetime(cutoff).replace(day=1)
     start = end - pd.DateOffset(months=cant_periodos)
     months = pd.period_range(start=start, end=end - pd.DateOffset(months=1), freq="M")
-    return [(int(p.year), int(p.month)) for p in months]
+    return [(int(p.year), int(p.month)) for p in months if int(p.month) <= 6]
 
 
 def available_consumo_months(interim_dir: str) -> set[tuple[int, int]]:
