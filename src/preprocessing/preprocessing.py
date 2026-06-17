@@ -24,8 +24,8 @@ def preprocess_model_input(df):
     vars_str = ["categoria", "subcategoria_estrato", "municipio", "localidad", "barrio"]
     for col in vars_str:
         df[col] = df[col].fillna("sin_dato").astype(str).str.strip()
-    df = df[df["cant_null"] < 6].reset_index(drop=True)
-    df = df[df["cant_ceros_12"] < 9].reset_index(drop=True)
+    df = df[df["cant_null"] < 9].reset_index(drop=True)
+    # df = df[df["cant_ceros_12"] < 9].reset_index(drop=True)
     return df
 
 

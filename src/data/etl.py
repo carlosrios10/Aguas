@@ -29,6 +29,58 @@ def normalizar_cadena(texto):
     return texto
 
 
+_VALORES_SIN_DATO = frozenset({
+    "",
+    "nan",
+    "none",
+    "null",
+    "n/a",
+    "na",
+    "nd",
+    "n/d",
+    "#n/d",
+    "#n/a",
+    "sin dato",
+    "sin_dato",
+    "-",
+    ".",
+})
+
+COLS_CATEGORIALES_CONSUMO = ("municipio", "microsector", "barrio", "estado", "categoria")
+
+# Columnas heredadas del Excel (p. ej. Localidad.1 duplicada) que no se usan y suelen ir vacías
+COLS_DROP_CONSUMO = ("localidad1",)
+
+
+def normalizar_valor_categorial(valor):
+    """
+    Normaliza un valor categorial para ETL: texto en minúsculas, sin acentos,
+    espacios colapsados; null, vacíos y marcadores (#N/D, N/A, etc.) → 'sin_dato'.
+    """
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)):
+        return "sin_dato"
+    s = str(valor).strip()
+    if not s:
+        return "sin_dato"
+    s_lower = s.lower()
+    s_sin_acentos = unicodedata.normalize("NFKD", s_lower).encode("ascii", "ignore").decode("utf-8")
+    s_norm = re.sub(r"\s+", " ", s_sin_acentos).strip()
+    if s_norm in _VALORES_SIN_DATO:
+        return "sin_dato"
+    compacto = re.sub(r"[\s#_./-]+", "", s_norm)
+    if compacto in ("nd", "na", "n/a", "n/d"):
+        return "sin_dato"
+    return s_norm
+
+
+def normalizar_columnas_categoriales(df, columnas):
+    """Aplica normalizar_valor_categorial a cada columna presente en el DataFrame."""
+    for col in columnas:
+        if col in df.columns:
+            df[col] = df[col].apply(normalizar_valor_categorial)
+    return df
+
+
 # ============================================================================
 # ETL MENSUAL - Funciones para procesamiento incremental por mes
 # ============================================================================
@@ -106,17 +158,21 @@ def clean_inspecciones(df):
 def clean_consumo(df):
     """
     Limpieza específica para consumo.
-    Espera columnas: niu (→ contrato), fecha_mes (%Y%m), consumo.
+    Espera columnas: niu (→ contrato), fecha_mes (%Y%m), consumo, instalacion,
+    subcategoria_estrato, localidad, determinacion_consumo, municipio, microsector,
+    barrio, estado, categoria.
     """
     df = df.copy()
     df.columns = [normalizar_cadena(c) for c in df.columns]
 
+    drop_present = [c for c in COLS_DROP_CONSUMO if c in df.columns]
+    if drop_present:
+        df = df.drop(columns=drop_present)
+
     df = df.rename(columns={"niu": "contrato"})
     df["contrato"] = df["contrato"].astype(str).str.strip()
-    if "instalacion" in df.columns:
-        df["instalacion"] = df["instalacion"].astype(str).str.strip()
-    if "subcategoria_estrato" in df.columns:
-        df["subcategoria_estrato"] = df["subcategoria_estrato"].astype(str).str.strip()
+    df["instalacion"] = df["instalacion"].astype(str).str.strip()
+    df["subcategoria_estrato"] = df["subcategoria_estrato"].astype(str).str.strip()
 
     df["fecha_mes"] = pd.to_datetime(df["fecha_mes"], format="%Y%m", errors="coerce")
     df = df.dropna(subset=["fecha_mes"]).copy()
@@ -129,14 +185,11 @@ def clean_consumo(df):
 
     df["consumo"] = df["consumo"].apply(lambda x: None if pd.isna(x) or x < 0 else x)
 
-    if "localidad" in df.columns:
-        df["localidad"] = df["localidad"].astype(str).str.strip()
-    if "municipio" in df.columns:
-        df["municipio"] = df["municipio"].astype(str).str.strip()
-    if "barrio" in df.columns:
-        df["barrio"] = df["barrio"].fillna("sin_dato").astype(str).str.strip()
-    if "determinacion_consumo" in df.columns:
-        df["determinacion_consumo"] = df["determinacion_consumo"].astype(str).str.strip()
+    df["localidad"] = df["localidad"].astype(str).str.strip()
+    df["determinacion_consumo"] = df["determinacion_consumo"].astype(str).str.strip()
+
+    for col in COLS_CATEGORIALES_CONSUMO:
+        df[col] = df[col].apply(normalizar_valor_categorial)
 
     df = df.sort_values("date").reset_index(drop=True)
     return df

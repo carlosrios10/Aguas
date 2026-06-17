@@ -15,7 +15,16 @@ from tqdm import tqdm
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.pipeline import Pipeline
 
+from src.config import get_paths
+
 logger = logging.getLogger(__name__)
+
+
+def resolve_tsfel_config_path(json_path=None):
+    """Ruta absoluta al JSON de features tsfel (default: paths.tsfel_config en config.yaml)."""
+    if json_path is not None:
+        return json_path
+    return get_paths()["tsfel_config"]
 
 
 class TsfelVars(BaseEstimator, TransformerMixin):
@@ -34,7 +43,7 @@ class TsfelVars(BaseEstimator, TransformerMixin):
 
     def compute_by_json(self, df, cols, window=12):
         cfg = tsfel.get_features_by_domain(json_path=self.features_names_path)
-        df_result = tsfel.time_series_features_extractor(cfg, df[cols].values.tolist(), n_jobs=-1)
+        df_result = tsfel.time_series_features_extractor(cfg, df[cols].values.tolist(),window=window,fs=1, n_jobs=-1)
         df_result['index'] = df.index
         return df_result
 
@@ -190,10 +199,16 @@ def compute_constant_consumption_vars(df, config_constantes):
     return df
 
 
-def compute_tsfel_consumption_vars(df, cant_periodos):
+def compute_tsfel_consumption_vars(df, cant_periodos, json_path=None):
     """Añade features tsfel + ExtraVars (3, 6, 12 periodos)."""
+    json_path = resolve_tsfel_config_path(json_path)
+    if not os.path.isfile(json_path):
+        raise FileNotFoundError(
+            f"No se encontró la config tsfel: {json_path}. "
+            "Debe existir models/tsfel_config_consumo.json (ver paths.tsfel_config en config.yaml)."
+        )
     pipe_feature_eng_train = Pipeline([
-        ("tsfel vars", TsfelVars(features_names_path=None, num_periodos=cant_periodos)),
+        ("tsfel vars", TsfelVars(features_names_path=json_path, num_periodos=cant_periodos)),
         ("add vars3", ExtraVars(num_periodos=3)),
         ("add vars6", ExtraVars(num_periodos=6)),
         ("add vars12", ExtraVars(num_periodos=12)),

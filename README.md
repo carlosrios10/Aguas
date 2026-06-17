@@ -17,7 +17,8 @@ ar-epm_poc/
 ├── scripts/                     # Scripts ejecutables (alternativa a notebooks)
 │   ├── run_etl.py               # ETL: raw → interim
 │   ├── run_train.py             # Dataset train + entrenamiento LGBM
-│   └── run_inference.py         # Dataset inferencia + scoring
+│   ├── run_inference.py         # Dataset inferencia + scoring
+│   └── validate_raw.py          # Validar solo raw pendiente (read+clean vs manifiesto)
 ├── poc/                         # Pipeline en notebooks (ejecutar en orden)
 │   ├── 1_etl.ipynb             # Paso 1: ETL mensual (raw → interim)
 │   ├── train.ipynb              # Paso 2: Dataset train + entrenamiento LGBM
@@ -96,6 +97,11 @@ python scripts/run_train.py --config prod.yaml
 
 python scripts/run_inference.py               # Inferencia (usa paths e inference.* de config)
 python scripts/run_inference.py --config prod.yaml
+
+python scripts/validate_raw.py                # Solo meses raw pendientes vs config/raw_manifest.generated.yaml
+python scripts/validate_raw.py --skip-manifest   # Solo lectura + clean_* (sin manifiesto)
+python scripts/validate_raw.py --strict-enums    # Valores fuera del manifiesto = error
+python scripts/validate_raw.py --no-summary      # Sin el bloque final "RESUMEN POR MES"
 ```
 
 ### Ejecución por notebooks
@@ -107,6 +113,7 @@ Ejecutar los notebooks **desde la raíz del proyecto** (o con el kernel configur
 | 1     | `1_etl.ipynb`   | ETL: lee `data/raw/`, procesa y escribe en `data/interim/` (parquets por año/mes). Usa `config` para paths y `etl.sources`/`etl.overwrite`. |
 | 2     | `train.ipynb`   | Lee `data/interim/`, construye dataset wide de **train** (fechas de corte ≤ cutoff de config), entrena LGBM y guarda `models/lgbm_model.pkl`. Usa `models/features.pkl` y `models/hyperparams.pkl`. |
 | 3     | `inference.ipynb` | Construye dataset wide de **inferencia** para el cutoff de config, carga modelo y features, guarda `data/predictions/scores_<CUTOFF>_<timestamp>.csv` (timestamp = YYYYMMDD_HHMMSS). |
+| —     | `profile_interim_manifest.ipynb` | (Opcional) Perfilado de los últimos N meses en `data/interim/` y generación de borrador `config/raw_manifest.generated.yaml` para validación de esquema/valores. |
 
 ### Parámetros importantes (en `config/config.yaml`)
 

@@ -1,0 +1,388 @@
+meta:
+  version: 1
+  generated_at: '2026-05-28T20:18:30Z'
+  generated_from: data/interim (parquet post-ETL)
+  lookback_months_requested: 12
+  max_cardinality_for_enum: 50
+  note: Borrador inferido de datos; revisar antes de usar como contrato estricto.
+sources:
+  inspecciones:
+    source: inspecciones
+    row_count: 17773
+    columns:
+      solicitud:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 17771
+      instalacion:
+        pandas_dtype: int64
+        null_fraction_observed: 0.0
+        nunique_observed: 15250
+        min_observed: 190045100000520000
+        max_observed: 191481100567950016
+      contrato:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 15939
+      fecha:
+        pandas_dtype: datetime64[ns]
+        null_fraction_observed: 0.0
+        nunique_observed: 12
+        min_observed: '2024-01-01'
+        max_observed: '2024-12-01'
+        allowed_values_observed:
+        - '1704067200000000000'
+        - '1706745600000000000'
+        - '1709251200000000000'
+        - '1711929600000000000'
+        - '1714521600000000000'
+        - '1717200000000000000'
+        - '1719792000000000000'
+        - '1722470400000000000'
+        - '1725148800000000000'
+        - '1727740800000000000'
+        - '1730419200000000000'
+        - '1733011200000000000'
+      resultado:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 37
+        allowed_values_observed:
+        - 'Abandonada '
+        - 'Acometida futura '
+        - Bajo consumo justificado
+        - 'Casa habitada con servicio '
+        - Conexión sin medidor
+        - 'Conexión sin medidor '
+        - Cortado sin medidor
+        - 'Cortado sin medidor '
+        - 'Desocupada '
+        - Enviar medidor a calibración
+        - Facilidad de acceso
+        - Fraude
+        - 'Lote vacio o demolido '
+        - Medidor Opaco
+        - Medidor al revés
+        - Medidor con obsolescencia tecnológica
+        - Medidor destruido
+        - 'Medidor destruido '
+        - Medidor en calibración
+        - Medidor opaco
+        - 'Medidor opaco '
+        - Medidor parado o dañado
+        - 'Multi Usuario '
+        - 'Pago '
+        - Posible trocamiento
+        - Posición correcta
+        - Pozo
+        - Predio abandonado
+        - Predio demolido
+        - Predio desocupado
+        - 'Predio en constucion '
+        - 'Recurrentes '
+        - Se cambió medidor
+        - Sin novedad
+        - Suspendida sin medidor
+        - 'Unificacion '
+        - conexión sin medidor
+      clasificacion_resultado:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 3
+        allowed_values_observed:
+        - Anomalía
+        - Fraude
+        - Normal
+      causa_de_revision:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 20
+        allowed_values_observed:
+        - Búsqueda sistemática de fugas
+        - Causas y Observaciones
+        - Causas y Observaciones radicado EPM 20240130138581
+        - Causas y Observaciones radicado EPM 20240130160749
+        - Causas y Observaciones radicado EPM 20240130262831
+        - Consumo Cero/bajos
+        - Consumo Cero/bajos - Piloto
+        - Consumo cero y bajos
+        - Consumo cero/bajos
+        - Consumo cero/bajos - Piloto
+        - Correo electrónico
+        - Desarrollo tecnológico
+        - Directas legalizadas
+        - Facturación Octubre
+        - Facturación agosto
+        - Gestión pérdidas (usuarios con cartera)
+        - Homologación categorías
+        - Plan de choque Turbo
+        - Registro devolviendo
+        - Reportados por GPC
+      is_fraud:
+        pandas_dtype: int32
+        null_fraction_observed: 0.0
+        nunique_observed: 2
+        min_observed: 0
+        max_observed: 1
+        allowed_values_observed:
+        - '0'
+        - '1'
+      month:
+        pandas_dtype: int64
+        null_fraction_observed: 0.0
+        nunique_observed: 12
+        min_observed: 1
+        max_observed: 12
+        allowed_values_observed:
+        - '1'
+        - '10'
+        - '11'
+        - '12'
+        - '2'
+        - '3'
+        - '4'
+        - '5'
+        - '6'
+        - '7'
+        - '8'
+        - '9'
+      year:
+        pandas_dtype: int64
+        null_fraction_observed: 0.0
+        nunique_observed: 1
+        min_observed: 2024
+        max_observed: 2024
+        allowed_values_observed:
+        - '2024'
+      date:
+        pandas_dtype: datetime64[ns]
+        null_fraction_observed: 0.0
+        nunique_observed: 12
+        min_observed: '2024-01-01'
+        max_observed: '2024-12-01'
+        allowed_values_observed:
+        - '1704067200000000000'
+        - '1706745600000000000'
+        - '1709251200000000000'
+        - '1711929600000000000'
+        - '1714521600000000000'
+        - '1717200000000000000'
+        - '1719792000000000000'
+        - '1722470400000000000'
+        - '1725148800000000000'
+        - '1727740800000000000'
+        - '1730419200000000000'
+        - '1733011200000000000'
+  consumo:
+    source: consumo
+    row_count: 1280034
+    columns:
+      contrato:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 110551
+      instalacion:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 154181
+      fecha_mes:
+        pandas_dtype: datetime64[ns]
+        null_fraction_observed: 0.0
+        nunique_observed: 12
+        min_observed: '2024-07-01'
+        max_observed: '2025-06-01'
+        allowed_values_observed:
+        - '1719792000000000000'
+        - '1722470400000000000'
+        - '1725148800000000000'
+        - '1727740800000000000'
+        - '1730419200000000000'
+        - '1733011200000000000'
+        - '1735689600000000000'
+        - '1738368000000000000'
+        - '1740787200000000000'
+        - '1743465600000000000'
+        - '1746057600000000000'
+        - '1748736000000000000'
+      consumo:
+        pandas_dtype: int64
+        null_fraction_observed: 0.0
+        nunique_observed: 909
+        min_observed: 0
+        max_observed: 12823
+      estado:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 14
+        allowed_values_observed:
+        - con orden de reinstalacion
+        - conexion
+        - convenio de pago
+        - convenio de pago para retiro voluntario
+        - inicio retiro voluntario
+        - orden de reconexia3n
+        - orden de retiro
+        - orden suspension total
+        - pendiente de retiro por no pago
+        - retirado sin instalacion
+        - retiro definitivo
+        - retiro voluntario
+        - sin_dato
+        - suspension total
+      categoria:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 6
+        allowed_values_observed:
+        - comercial
+        - especial
+        - industrial
+        - oficial
+        - residencial
+        - sin_dato
+      subcategoria_estrato:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 18
+        allowed_values_observed:
+        - '-1'
+        - '1'
+        - '1.0'
+        - '10.0'
+        - '11.0'
+        - '12.0'
+        - '13.0'
+        - '2'
+        - '2.0'
+        - '3'
+        - '3.0'
+        - '4'
+        - '4.0'
+        - '5'
+        - '5.0'
+        - '6'
+        - '6.0'
+        - nan
+      localidad:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 29
+        allowed_values_observed:
+        - '190042'
+        - '190045'
+        - '190046'
+        - '190048'
+        - '190050'
+        - '190146'
+        - '190147'
+        - '190150'
+        - '190172'
+        - '190173'
+        - '190480'
+        - '190501'
+        - '190656'
+        - '190761'
+        - '190837'
+        - '190838'
+        - '191481'
+        - '610000'
+        - 8 CR 1
+        - '900421'
+        - '907611'
+        - CL 102
+        - CL 8
+        - CL 90
+        - CR 17
+        - CR 65
+        - D CR
+        - L 8 -8
+        - _19004
+      municipio:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 14
+        allowed_values_observed:
+        - apartado
+        - bajira
+        - carepa
+        - chigorodo
+        - mutata
+        - nuevo belen de bajira
+        - olaya
+        - reposo
+        - rionegro
+        - san jeronimo
+        - santa fe de antioquia
+        - sin_dato
+        - sopetran
+        - turbo
+      microsector:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 496
+      barrio:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 1253
+      determinacion_consumo:
+        pandas_dtype: object
+        null_fraction_observed: 0.0
+        nunique_observed: 4
+        allowed_values_observed:
+        - '1'
+        - '2'
+        - '3'
+        - '4'
+      localidad1:
+        pandas_dtype: float64
+        null_fraction_observed: 1.0
+        nunique_observed: 0
+        min_observed: null
+        max_observed: null
+      month:
+        pandas_dtype: int64
+        null_fraction_observed: 0.0
+        nunique_observed: 12
+        min_observed: 1
+        max_observed: 12
+        allowed_values_observed:
+        - '1'
+        - '10'
+        - '11'
+        - '12'
+        - '2'
+        - '3'
+        - '4'
+        - '5'
+        - '6'
+        - '7'
+        - '8'
+        - '9'
+      year:
+        pandas_dtype: int64
+        null_fraction_observed: 0.0
+        nunique_observed: 2
+        min_observed: 2024
+        max_observed: 2025
+        allowed_values_observed:
+        - '2024'
+        - '2025'
+      date:
+        pandas_dtype: datetime64[ns]
+        null_fraction_observed: 0.0
+        nunique_observed: 12
+        min_observed: '2024-07-01'
+        max_observed: '2025-06-01'
+        allowed_values_observed:
+        - '1719792000000000000'
+        - '1722470400000000000'
+        - '1725148800000000000'
+        - '1727740800000000000'
+        - '1730419200000000000'
+        - '1733011200000000000'
+        - '1735689600000000000'
+        - '1738368000000000000'
+        - '1740787200000000000'
+        - '1743465600000000000'
+        - '1746057600000000000'
+        - '1748736000000000000'
