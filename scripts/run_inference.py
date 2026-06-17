@@ -122,7 +122,7 @@ def main():
         logger.info("Dataset listo: %s contratos.", len(df))
 
         logger.info("Paso 2/5: Aplicando preprocesamiento (categóricas, estrato, medidor)...")
-        df = preprocess_model_input(df)
+        # df = preprocess_model_input(df)
 
         logger.info("Paso 3/5: Cargando modelo y lista de features...")
         model = joblib.load(os.path.join(models_dir, "lgbm_model.pkl"))
