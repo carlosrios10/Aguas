@@ -22,7 +22,7 @@ Para el flujo mensual completo (ETL + inferencia), requisitos de datos y soluci�
    Los archivos de consumo e inspecciones deben estar en las carpetas que usa el proyecto (normalmente alguien del equipo técnico ya habrá ejecutado el ETL).
 
 2. **Modelo entrenado**  
-   Debe existir un modelo guardado (por ejemplo, el equipo habrá ejecutado antes el proceso de entrenamiento). Si no, la inferencia fallará y tendrás que pedir que entrenen el modelo primero.
+   Debe existir `models/lgbm_model.pkl`, generado con el entrenamiento. Si no está, sigue [guia_train_paso_a_paso.md](guia_train_paso_a_paso.md) antes de puntuar.
 
 3. **Entorno listo**  
    El proyecto debe estar instalado en tu PC o en el servidor donde lo ejecutes (Python, dependencias). Si no estás seguro, pide ayuda al equipo técnico para la primera vez.
@@ -42,8 +42,8 @@ El sistema necesita saber **para qué mes** quieres los puntajes (por ejemplo, e
      cutoff: "2025-09-01"
      cant_periodos: 12
      contratos_list: null
-     columns_filter:   # opcional: filtrar por ciclo, localidad, etc.
-     output_columns: [contrato, categoria, ciclo, ...]   # columnas en el CSV (opcional)
+     columns_filter: null   # opcional: filtrar por tipo_cliente, marca, etc.
+     output_columns: [contrato, marca, tipo_cliente]   # columnas extra; score se agrega siempre
    ```
 5. **Cambia solo la fecha** en `cutoff` por el mes que quieras. Usa siempre el formato **año-mes-día**, y el día **01**:
    - Enero 2025 → `"2025-01-01"`
@@ -64,7 +64,7 @@ El sistema necesita saber **para qué mes** quieres los puntajes (por ejemplo, e
 - **Importante:** Tienes que estar en la **carpeta raíz del proyecto** (la que contiene las carpetas `config`, `scripts`, `data`, etc.).  
   - Si abriste la terminal desde otra carpeta, escribe algo como (ajusta la ruta a tu PC):
     ```text
-    cd C:\ruta\donde\esta\el\proyecto\emcali_poc
+    cd C:\ruta\donde\esta\el\proyecto\caj_poc
     ```
   - y pulsa Enter.
 
@@ -118,7 +118,7 @@ Puedes abrirlo con **Excel** o **LibreOffice Calc** (o cualquier hoja de cálcul
 
 ## Paso 6: Qué contiene el archivo y cómo usarlo
 
-El archivo tiene al menos dos columnas (**contrato** y **score**). En la configuración del proyecto (`config/config.yaml`, opción **output_columns**) se pueden incluir columnas adicionales (por ejemplo categoría, municipio, localidad, estrato); si están configuradas, aparecerán también en el CSV.
+El CSV siempre trae **contrato** y **score**. El script agrega **score** al final; no hace falta ponerlo en `output_columns`. Esa lista puede incluir columnas de CAJ (por ejemplo `marca`, `tipo_instalacao`, `tipo_cliente`, `localizacao`, `situacao_la`). Si una no está en el dataset, no sale en el archivo. `null` deja solo contrato y score.
 
 | Columna   | Significado |
 |----------|-------------|
@@ -156,7 +156,7 @@ Si prefieres ejecutar la inferencia desde un **notebook** en lugar del comando e
 
 ### 1. Abrir la terminal en la carpeta raíz del proyecto
 
-Igual que en el Paso 2: la terminal debe estar en la carpeta que contiene `config`, `scripts`, `poc`, `data`, etc. Si no, usa `cd` para entrar (por ejemplo: `cd C:\ruta\al\proyecto\emcali_poc`).
+Igual que en el Paso 2: la terminal debe estar en la carpeta que contiene `config`, `scripts`, `poc`, `data`, etc. Si no, usa `cd` para entrar (por ejemplo: `cd C:\ruta\al\proyecto\caj_poc`).
 
 ### 2. Activar el entorno virtual (si te lo indicaron)
 
@@ -215,7 +215,7 @@ Igual que en la ejecución por script: en la carpeta **`data/predictions/`**, co
   Puede que falten datos en las carpetas que usa el ETL. Pasa el mensaje de error al equipo técnico para que revisen las carpetas `data/raw` y `data/interim`.
 
 - **“Columnas faltantes” o “modelo no encontrado”**  
-  Normalmente significa que el modelo aún no se ha entrenado o que hay que volver a entrenar. Contacta al equipo técnico.
+  Normalmente significa que el modelo aún no se ha entrenado o que hay que volver a entrenar. Ver [guia_train_paso_a_paso.md](guia_train_paso_a_paso.md).
 
 - **No encuentro la carpeta `data/predictions`**  
   Puede estar dentro de la carpeta del proyecto con otro nombre si lo han configurado distinto. Revisa en `config/config.yaml` la ruta que pone en `paths` → `predictions`; esa es la carpeta donde se guardan los CSV.
@@ -229,4 +229,4 @@ Igual que en la ejecución por script: en la carpeta **`data/predictions/`**, co
 ---
 
 **Documento:** Guía de inferencia paso a paso (personas no técnicas)  
-**Proyecto:** AquaData (emcali_poc). Para flujo mensual completo y más detalle, ver [manual_usuario.md](manual_usuario.md).
+**Proyecto:** AquaData (caj_poc). Para flujo mensual completo y más detalle, ver [manual_usuario.md](manual_usuario.md).

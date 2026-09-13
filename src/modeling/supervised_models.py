@@ -6,12 +6,11 @@ Modelos supervisados del proyecto.
 
 import numpy as np
 from tqdm import tqdm
-from sklearn.preprocessing import OrdinalEncoder
 from sklearn.compose import ColumnTransformer
 from scipy.stats import randint as sp_randint
 from scipy.stats import uniform as sp_uniform
 from imblearn.pipeline import Pipeline, make_pipeline
-from src.preprocessing.preprocessing  import ToDummy, TeEncoder, CardinalityReducer, MinMaxScalerRow
+from src.preprocessing.preprocessing import TeEncoder, CardinalityReducer, MinMaxScalerRow
 from lightgbm import LGBMClassifier, early_stopping
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler
@@ -25,33 +24,33 @@ def binary_area_peligrosa(x):
     return x.map({'zona peligrosa':1,'zona no peligrosa':0}).to_frame()
 
 def get_preprocesor(preprocesor):
-    """Preprocesador para features categóricas. Soporta: -1 (passthrough), 1 (dummy + TE estrato/localidad)."""
+    """Preprocesador para features categóricas. Soporta: -1 (passthrough), 1 (TE de marca, tipo_instalacao, ciudad_sector, tipo_cliente)."""
     if preprocesor == -1:
         preprocessor = ColumnTransformer(transformers=[], remainder='passthrough')
     elif preprocesor == 1:
-        pipe_categoria = Pipeline([
-        ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
-        ('categoria_dummy',ToDummy(['categoria']))
+        pipe_marca = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
+            ('te', TeEncoder(['marca'], w=50))
         ])
-        
-        pipe_estrato = Pipeline([
-        ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
-        ('te',TeEncoder(['estrato'],w=50))
+        pipe_tipo_instalacao = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.01)),
+            ('te', TeEncoder(['tipo_instalacao'], w=50))
         ])
-        pipe_medidor_2 = Pipeline([
-        ('cardinality_reducer', CardinalityReducer(threshold=0.002)),
-        ('te',TeEncoder(['medidor_2'],w=50))
+        pipe_tipo_ciudad_sector = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.005)),
+            ('te', TeEncoder(['ciudad_sector'], w=50))
         ])
-        vars_enc = ["barrio_comuna"]
-        vars_dummy = ['localidad']
+        pipe_tipo_cliente = Pipeline([
+            ('cardinality_reducer', CardinalityReducer(threshold=0.005)),
+            ('te', TeEncoder(['tipo_cliente'], w=50))
+        ])
         t_features = [
-        ('dummy_var', ToDummy(vars_dummy), vars_dummy),
-        ('enc_var', OrdinalEncoder(handle_unknown='use_encoded_value', unknown_value=-1), vars_enc),
-        ('p_categoria', pipe_categoria, ['categoria']),
-        ('p_estrato', pipe_estrato, ['estrato']),
-        ('p_pipe_medidor_2', pipe_medidor_2, ['medidor_2']),
+            ('p_marca', pipe_marca, ['marca']),
+            ('p_tipo_instalacao', pipe_tipo_instalacao, ['tipo_instalacao']),
+            ('p_ciudad_sector', pipe_tipo_ciudad_sector, ['ciudad_sector']),
+            ('p_tipo_cliente', pipe_tipo_cliente, ['tipo_cliente']),
         ]
-        preprocessor = ColumnTransformer(transformers= t_features,remainder='passthrough')
+        preprocessor = ColumnTransformer(transformers=t_features, remainder='passthrough')
     else:
         raise ValueError(
             f"preprocesor debe ser -1 o 1; recibido: {preprocesor}. "

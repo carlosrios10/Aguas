@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Script ejecutable del ETL mensual (equivalente a poc/1_etl.ipynb).
+Script ejecutable del ETL mensual (equivalente a poc/etl.ipynb).
 
 Uso (desde la raíz del proyecto):
   python scripts/run_etl.py

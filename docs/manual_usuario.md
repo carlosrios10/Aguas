@@ -40,13 +40,14 @@ inference:
   cutoff: "2026-03-01"
   cant_periodos: 12
   contratos_list: null
-  columns_filter: null   # opcional: filtrar por columnas (ej: { ciclo: ["14","16"] })
-  output_columns: [contrato, categoria, ciclo, ...]   # opcional: columnas extra en el CSV (null = solo contrato y score)
+  columns_filter: null   # opcional: filtrar por columnas (ej: { tipo_cliente: ["Residencial"] })
+  output_columns: [contrato, marca, tipo_cliente]   # columnas extra; score se agrega siempre (null = solo contrato y score)
 ```
 
 - Use siempre comillas alrededor de la fecha.
 - El formato debe ser exactamente **YYYY-MM-DD** (por ejemplo `"2026-04-01"` para abril de 2026).
-- **columns_filter** (opcional): si desea restringir la inferencia a ciertos valores (por ejemplo solo algunos ciclos o localidades), indique un diccionario `columna: [valores]`. Si es `null`, se procesan todos los contratos con consumo.
+- **columns_filter** (opcional): si desea restringir la inferencia a ciertos valores (por ejemplo un `tipo_cliente` o una `marca`), indique un diccionario `columna: [valores]`. Solo aplica a columnas que ya existen antes de tsfel. Si es `null`, se procesan los contratos del maestro que tienen consumo en la ventana.
+- **output_columns** (opcional): columnas extra del CSV. El script siempre agrega **score** al final; no hace falta incluirlo en la lista. Si una columna no está en el dataset, no sale. `null` deja solo contrato y score.
 - En **paths** puede aparecer **logs: "data/logs"**; ahí se guardan archivos de log de cada ejecución (ETL, inferencia, entrenamiento). Opcionalmente puede configurarse **log_level: "INFO"** (o "DEBUG", "WARNING", "ERROR") en el YAML.
 - No modifique el resto del archivo a menos que le indiquen lo contrario.
 
@@ -102,7 +103,7 @@ Si en la config está definido **paths.logs** (por ejemplo `data/logs`), cada ej
 - **Error “inference.cutoff es obligatorio”:** No deje el cutoff vacío ni en blanco. Ponga una fecha válida, por ejemplo `"2026-03-01"`.
 - **Error por “meses cargados” o datos insuficientes:** Asegúrese de haber ejecutado el ETL para los meses que necesita la ventana de consumo (por defecto 12 meses hacia atrás desde el cutoff). Debe haber archivos en `data/interim/consumo/` y `data/interim/maestro/` para que la inferencia funcione.
 - **Error “No hay maestro en interim”:** La inferencia requiere el maestro procesado. Ejecute el ETL (incluyendo la fuente **maestro** en `config.yaml` → `etl.sources`) y asegúrese de tener al menos un archivo en `data/raw/maestro/` (por ejemplo `maestro_AAAA_MM.xlsx`).
-- **“Dataset de inferencia quedó vacío tras aplicar columns_filter”:** El filtro definido en `inference.columns_filter` no coincide con ningún contrato (por ejemplo valores de ciclo o localidad que no existen en los datos). Revise los valores en el maestro o deje `columns_filter: null` para procesar todos.
+- **“Dataset de inferencia quedó vacío tras aplicar columns_filter”:** El filtro definido en `inference.columns_filter` no coincide con ningún contrato (por ejemplo un `tipo_cliente` o una `marca` que no existen en los datos). Revise los valores o deje `columns_filter: null` para procesar todos.
 - **Error al cargar el modelo:** Verifique que en `models/` existan `lgbm_model.pkl` y `features.pkl`. Si faltan, debe proporcionarlos el equipo que entrena el modelo.
 
 Si el mensaje de error no le resulta claro, revise los archivos en **`data/logs/`** (si existen); allí se guarda el detalle de cada ejecución. Anote el texto completo del error y contacte al equipo técnico si es necesario.
@@ -115,7 +116,7 @@ Si prefiere ejecutar el proceso de forma **interactiva** (útil para inspecciona
 
 | Notebook | Equivalente a | Descripción |
 |----------|---------------|-------------|
-| `poc/1_etl.ipynb` | `python scripts/run_etl.py` | Ejecuta el ETL celda a celda, mostrando archivos procesados y posibles advertencias. |
+| `poc/etl.ipynb` | `python scripts/run_etl.py` | Ejecuta el ETL celda a celda, mostrando archivos procesados y posibles advertencias. |
 | `poc/inference.ipynb` | `python scripts/run_inference.py` | Ejecuta la inferencia paso a paso; permite ver el dataset generado antes de calcular scores. |
 | `poc/train.ipynb` | `python scripts/run_train.py` | Entrena el modelo de forma interactiva (solo si necesita reentrenar). |
 
@@ -132,7 +133,7 @@ Los notebooks cargan la configuración desde `config/config.yaml`, igual que los
 
 ## 8. Entrenamiento del modelo (no es mensual)
 
-El **entrenamiento** del modelo no forma parte del flujo mensual del usuario. Se ejecuta cuando el equipo de análisis decide reentrenar (por ejemplo con más datos o nuevos parámetros), mediante `python scripts/run_train.py` o el notebook `poc/train.ipynb`. Usted solo debe ejecutar **ETL** (si hay datos nuevos) e **inferencia** cada mes, después de actualizar **inference.cutoff** en `config/config.yaml`.
+El **entrenamiento** del modelo no forma parte del flujo mensual. Se hace en la entrega (o al reentrenar): se copian `features.pkl` y `hyperparams.pkl` en `models/` y se ejecuta el train. Pasos en [guia_train_paso_a_paso.md](guia_train_paso_a_paso.md). Cada mes usted solo ejecuta **ETL** (si hay datos nuevos) e **inferencia**, después de actualizar **inference.cutoff** en `config/config.yaml`.
 
 ---
 
@@ -142,6 +143,6 @@ El **entrenamiento** del modelo no forma parte del flujo mensual del usuario. Se
 |-------------------|--------------|
 | 1. Indicar el mes a predecir | Editar `config/config.yaml` → `inference.cutoff` (formato "YYYY-MM-DD") |
 | 2. Cargar datos nuevos (si aplica) | Colocar archivos en `data/raw/inspecciones/` y `data/raw/consumo/` |
-| 3. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` (o `poc/1_etl.ipynb`) |
+| 3. Ejecutar ETL (si hay datos nuevos) | `python scripts/run_etl.py` (o `poc/etl.ipynb`) |
 | 4. Ejecutar inferencia | `python scripts/run_inference.py` (o `poc/inference.ipynb`) |
 | 5. Revisar resultados | Abrir el archivo más reciente en `data/predictions/` (nombre tipo `scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv`) |

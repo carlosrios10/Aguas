@@ -1,7 +1,6 @@
 """
-ETL mensual: inspecciones y consumo.
+ETL mensual CAJ: inspecciones, consumo y maestro.
 Procesamiento incremental: raw xlsx → interim parquet por año/mes.
-Adecuado para EMCALI: inspecciones (contrato, fecha, resultado) y consumo (contrato, ano/mes, consumo, funcion, causa, observacion).
 """
 import logging
 import os
@@ -11,6 +10,7 @@ import unicodedata
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from unidecode import unidecode
 
 logger = logging.getLogger(__name__)
 
@@ -72,121 +72,58 @@ def get_pending_months(raw_dir, interim_dir, source_name, overwrite=False):
 
 
 def clean_inspecciones(df):
-    """
-    Limpieza para inspecciones (EMCALI).
-    Se asume columnas: contrato, fecha, resultado (y opcional observacion).
-    - contrato: string, se toma la parte antes del '.' si existe; luego int.
-    - fecha: datetime (dayfirst=True) → date (primer día del mes).
-    - is_fraud: 1 si resultado == 1, sino 0.
-    - Desduplicación por (contrato, date) quedándose con is_fraud máximo.
-    """
+    """Limpieza de inspecciones CAJ."""
     df = df.copy()
-    df.columns = [normalizar_cadena(c) for c in df.columns]
-
-    df["contrato"] = df["contrato"].astype(str).str.strip().str.split(".").str[0]
-    df = df[df["contrato"].str.len() > 0].copy()
-    df = df.dropna(subset=["contrato"]).reset_index(drop=True)
-
-    df["date"] = pd.to_datetime(df["fecha"], errors="coerce", dayfirst=True)
-    df = df.dropna(subset=["date"]).copy()
-
-    # Normalizar a primer día del mes
-    df["month"] = df["date"].dt.month
-    df["year"] = df["date"].dt.year
+    df.columns = df.columns.str.strip().str.lower()
+    df.matricula = df.matricula.astype(str)
+    df.rename(columns={"matricula": "contrato"}, inplace=True)
+    df["data_da_fiscalizacao"] = pd.to_datetime(df["data_da_fiscalizacao"], errors="coerce", dayfirst=True)
     df["date"] = pd.to_datetime(
-        df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01"
+        df["data_da_fiscalizacao"].dt.year.astype(str) + "-" + df["data_da_fiscalizacao"].dt.month.astype(str)
     )
-
-    # resultado puede venir como float (1.0, 0.0)
-    df["is_fraud"] = (df["resultado"].astype(float).fillna(-1) == 1).astype(int)
-
-    # Una fila por (contrato, date): la de mayor is_fraud
-    df = df.loc[df.groupby(["contrato", "date"])["is_fraud"].idxmax()].reset_index(drop=True)
-
-    # Contrato como int (como en el notebook EMCALI)
-    df["contrato"] = df["contrato"].astype(int)
-
-    df["observacion"] = df["observacion"].astype(str)
+    df["is_fraud_1"] = df.motivo.isin(["Sim: By-pass", "Sim: LA clandestina", "Sim: Corte ramal violado"]).astype(int)
+    df["is_fraud_2"] = df.hidrometro_invertido.isin(["SIM"]).astype(int)
+    df["is_fraud_3"] = df.situacao_dos_lacres_cavalete.isin(["Rompido", "Sem lacre"]).astype(int)
+    df["is_fraud_4"] = df.situacao_do_hidrometro.isin(
+        ["Não está no cavalete", "Danificado - Cliente", "Enviar para análise", "Danificado - Imã"]
+    ).astype(int)
+    df["is_fraud_5"] = df.situacao_da_la_pelo_fiscal.isin(["Violada"]).astype(int)
+    df["is_fraud_6"] = df.situacao_cavalete.isin(["Intervenção no cavalete"]).astype(int)
+    df["is_fraud"] = (
+        df[["is_fraud_1", "is_fraud_2", "is_fraud_3", "is_fraud_4", "is_fraud_5", "is_fraud_6"]].sum(axis=1) > 0
+    ).astype(int)
+    df.reset_index(drop=True, inplace=True)
+    df = df.loc[df.groupby(["contrato", "date"]).is_fraud.idxmax()]
     return df
 
 
 def clean_consumo(df):
-    """
-    Limpieza para consumo (EMCALI). Procesa un mes de datos.
-    Se asume columnas: contrato, ano, mes, consumo, funcion, causa, observacion.
-    Lógica alineada con notebook 2_Contruccion_dataset_v3.
-    """
+    """Limpieza de consumo CAJ: numérico con coerce, flags de situacao_la."""
     df = df.copy()
-    df.columns = [normalizar_cadena(c) for c in df.columns]
-
-    df["contrato"] = df["contrato"].astype(str).str.strip()
-    df = df[df["contrato"].str.len() > 0].dropna(subset=["contrato"]).reset_index(drop=True)
-
-    df["month"] = pd.to_numeric(df["mes"], errors="coerce").fillna(0).astype(int)
-    df["year"] = pd.to_numeric(df["ano"], errors="coerce").fillna(0).astype(int)
-    df["date"] = pd.to_datetime(
-        df["year"].astype(str) + "-" + df["month"].astype(str).str.zfill(2) + "-01",
-        errors="coerce",
-    )
-    df = df.dropna(subset=["date"]).reset_index(drop=True)
-
-    # Consumo: si viene como string con coma (ej. "30,5"), tomar parte entera
-    if df["consumo"].dtype == object or (hasattr(df["consumo"].dtype, "name") and df["consumo"].dtype.name == "string"):
-        df["consumo"] = df["consumo"].astype(str).str.split(",").str[0]
+    df.columns = df.columns.str.strip().str.lower()
+    df.matricula = df.matricula.astype(str)
+    df.mes_fatura = pd.to_datetime(df.mes_fatura)
     df["consumo"] = pd.to_numeric(df["consumo"], errors="coerce")
-    df = df[df["consumo"] >= 0].copy()
-    df["consumo"] = df["consumo"].fillna(0).astype(int)
-
-    df["causa"] = df["causa"].fillna(0).astype(int)
-    df["observacion"] = df["observacion"].fillna(0).astype(int)
-    df["funcion"] = df["funcion"].astype(str).str.strip().fillna("")
-
-    # Ordenar y una fila por (contrato, date), como en el notebook
-    df = df.sort_values(by=["contrato", "year", "month", "funcion", "consumo"], ascending=[True, True, True, False, False], na_position="last")
+    df.consumo = df.consumo.astype(float)
+    df.situacao_la = df.situacao_la.astype(str)
+    df.rename(columns={"matricula": "contrato", "mes_fatura": "date"}, inplace=True)
+    df = df.dropna(subset=["consumo"]).reset_index(drop=True)
     df = df.drop_duplicates(subset=["contrato", "date"], keep="first").reset_index(drop=True)
-
-    df["contrato"] = df["contrato"].astype(int)
-    df = df.sort_values("date").reset_index(drop=True)
+    df["flag_ativa"] = np.where(df["situacao_la"].isin(["Ativa"]), 1, 0).astype("uint8")
+    df["flag_cancelada"] = np.where(df["situacao_la"].isin(["Cancelada"]), 1, 0).astype("uint8")
+    df["flag_c_cavalete"] = np.where(df["situacao_la"].isin(["Cortada Cavalete"]), 1, 0).astype("uint8")
+    df["flag_suprimida"] = np.where(df["situacao_la"].isin(["Suprimida"]), 1, 0).astype("uint8")
     return df
 
 
-def _to_str_normalized(serie):
-    """
-    Convierte a string; preserva NaN. Si el valor es numérico entero (ej. 14.0), devuelve '14'.
-    """
-    out = pd.Series(index=serie.index, dtype=object)
-    mask_na = serie.isna()
-    num = pd.to_numeric(serie, errors="coerce")
-    mask_whole = num.notna() & (num % 1 == 0)
-
-    out.loc[mask_whole] = num.loc[mask_whole].astype(int).astype(str)
-    rest = ~mask_whole & ~mask_na
-    out.loc[rest] = serie.loc[rest].astype(str).str.strip().values
-    out.loc[mask_na] = np.nan
-    return out
-
-
 def clean_maestro(df):
-    """
-    Limpieza para maestro (EMCALI). Una foto contrato → atributos.
-    Se asume que el Excel trae: contrato, categoria, diametro, estrato, barrio_comuna, ciclo, localidad, medidor.
-    """
+    """Limpieza de maestro CAJ."""
     df = df.copy()
-    df.columns = [normalizar_cadena(c) for c in df.columns]
-
-    df["contrato"] = df["contrato"].astype(str).str.strip()
-    df = df[df["contrato"].str.len() > 0].dropna(subset=["contrato"]).reset_index(drop=True)
-    df["contrato"] = df["contrato"].astype(int)
-
-    df["categoria"] = _to_str_normalized(df["categoria"]).fillna("sin_dato")
-    df["estrato"] = _to_str_normalized(df["estrato"]).fillna("sin_dato")
-    df["barrio_comuna"] = _to_str_normalized(df["barrio_comuna"]).fillna("sin_dato")
-    df["ciclo"] = _to_str_normalized(df["ciclo"]).fillna("sin_dato")
-    df["localidad"] = _to_str_normalized(df["localidad"]).fillna("sin_dato")
-    df["diametro"] = pd.to_numeric(df["diametro"], errors="coerce")
-    df["medidor"] = _to_str_normalized(df["medidor"]).fillna("sin_dato")
-
-    df = df.drop_duplicates(subset=["contrato"], keep="last").reset_index(drop=True)
+    df.columns = [unidecode(x.strip().lower()) for x in df.columns]
+    df.matricula = df.matricula.astype(str)
+    df.rename(columns={"matricula": "contrato"}, inplace=True)
+    df.loc[pd.to_numeric(df["tipo_cliente"], errors="coerce").notna(), "tipo_cliente"] = np.nan
+    df = df.drop_duplicates(subset=["contrato"])
     return df
 
 

@@ -92,7 +92,7 @@ Ejecutá un notebook de prueba para confirmar que las librerías funcionan corre
 
 O, para probar el pipeline:
 
-- Un notebook de `poc/` (por ejemplo `poc/1_etl.ipynb`) y una celda con `from src.data import etl`.
+- Un notebook de `poc/` (por ejemplo `poc/etl.ipynb`) y una celda con `from src.data import etl`.
 
 ---
 

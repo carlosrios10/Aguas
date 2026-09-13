@@ -17,27 +17,14 @@ def preprocess_model_input(df):
     """
     Limpieza de entrada para train/inference del modelo.
 
-    Reglas:
-    - Normaliza variables categóricas con fillna('sin_dato') + strip.
-    - Filtra por calidad de historia de consumo.
+    Arma ciudad_sector desde localizacao y normaliza las categóricas de CAJ.
     """
-    # correccion de estrato
-    df['estrato'] = df.apply(lambda x: x.estrato if x.categoria=='1' else -1, axis=1)
-    df['estrato'] = df.estrato.fillna('sin_dato').astype(str).str.split('.').str[0].str.strip()
-    # correccion medidor
-    df['medidor_2'] = df.medidor.str.split('_').str[0].str.strip()
-    df['medidor_2'] = df['medidor_2'].replace('-',None).replace('',None)
-    # localidad
-    df.localidad = df.localidad.fillna('sin_dato').astype(str).str.split('.').str[0].str.strip()
-    # barrio comuna
-    df['barrio_comuna'] = df['barrio_comuna'].fillna('sin_dato').astype(str).str.split('.').str[0].str.strip()
-    
-    vars_str =  ['categoria','estrato','medidor_2','localidad','barrio_comuna']
-    for col in vars_str:
-        df[col] = df[col].fillna("sin_dato").astype(str).str.strip()
+    partes = df['localizacao'].str.split('.')
+    df['ciudad_sector'] = partes.str[0] + '.' + partes.str[1] + '.' + partes.str[2]
 
-    # df = df[df["cant_null"] < 6].reset_index(drop=True)
-    # df = df[df["cant_ceros_12"] < 9].reset_index(drop=True)
+    vars_str = ['marca', 'tipo_instalacao', 'ciudad_sector', 'tipo_cliente']
+    for x in vars_str:
+        df[x] = df[x].fillna('sin_dato').astype(str)
     return df
 
 

@@ -6,7 +6,8 @@ Uso (desde la raíz del proyecto):
   python scripts/run_inference.py
 
 Lee config/config.yaml (inference.cutoff, paths), crea dataset wide, preprocesa,
-carga modelo y features, obtiene scores P(fraud) y guarda data/predictions/scores_<CUTOFF>.csv.
+carga modelo y features, obtiene scores P(fraud) y guarda
+data/predictions/scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv.
 """
 import argparse
 import logging
@@ -121,7 +122,7 @@ def main():
             return 1
         logger.info("Dataset listo: %s contratos.", len(df))
 
-        logger.info("Paso 2/5: Aplicando preprocesamiento (categóricas, estrato, medidor)...")
+        logger.info("Paso 2/5: Aplicando preprocesamiento (ciudad_sector y categóricas)...")
         df = preprocess_model_input(df)
 
         logger.info("Paso 3/5: Cargando modelo y lista de features...")

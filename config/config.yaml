@@ -2,13 +2,12 @@
 # ACTUALIZACIÓN MENSUAL: editar solo inference.cutoff (mes a predecir, YYYY-MM-DD)
 # =============================================================================
 inference:
-  cutoff: "2025-09-01"
+  cutoff: "2026-06-01"
   cant_periodos: 12
-  contratos_list: null  # null = todos los contratos con consumo en la ventana
-  columns_filter:   # ej: { localidad: ["1", "2"], estrato: ["1", "2", "3"] } — filtra antes de tsfel
-    ciclo: ['14']
+  contratos_list: null # null = contratos del maestro con consumo en la ventana
+  columns_filter: null # { tipo_cliente: ["Comercial"] }  # ej: { tipo_cliente: ["Comercial"] } — filtra antes de tsfel
   # Columnas en el CSV de scores (null = solo contrato y score)
-  output_columns: [contrato, categoria, ciclo, localidad, estrato, barrio_comuna, diametro, medidor]
+  output_columns: ['localizacao', 'marca', 'tipo_instalacao','contrato', 'situacao_la',"tipo_cliente","cant_ceros_12"]
 
 paths:
   raw: "data/raw"
@@ -17,6 +16,7 @@ paths:
   models: "models"
   predictions: "data/predictions"
   logs: "data/logs"
+  tsfel_config: "config/tsfel_config_consumo.json"
 
 # Nivel de log: DEBUG, INFO, WARNING, ERROR
 log_level: "INFO"
@@ -28,9 +28,10 @@ etl:
     - maestro
   overwrite: False  # true = reprocesar todo; CLI --overwrite lo sobreescribe
 
-# Train: null = todas las inspecciones disponibles (sin límite de fecha)
+# Train: null = todas las inspecciones. Fecha = tope (meses con inspeccion <= cutoff).
+# 2023-01-01 es el primer mes valido (consumo desde 2022-01, ventana de 12) y deja un solo corte para pruebas.
 train:
-  cutoff: 
+  cutoff: null
   cant_periodos: 12
   max_ctas_neg: 500
   sam_th: 0.6

@@ -1,4 +1,4 @@
-# EMCALI POC
+# CAJ POC (AquaData)
 
 POC de pipeline de ML para detección de anomalías/fraude en consumo: ETL, construcción de dataset wide, entrenamiento con LightGBM e inferencia.
 
@@ -13,13 +13,14 @@ El proyecto procesa datos de inspecciones y consumo, construye un dataset en for
 ```
 proyecto/
 ├── config/
-│   └── config.yaml              # Configuración: paths, etl, train, inference, log_level
+│   ├── config.yaml              # Configuración: paths, etl, train, inference, log_level
+│   └── tsfel_config_consumo.json  # Features tsfel que entran al dataset wide
 ├── scripts/                     # Scripts ejecutables (alternativa a notebooks)
 │   ├── run_etl.py               # ETL: raw → interim (inspecciones, consumo, maestro)
 │   ├── run_train.py             # Dataset train + entrenamiento LGBM
 │   └── run_inference.py         # Dataset inferencia + scoring
 ├── poc/                         # Pipeline en notebooks (ejecutar en orden)
-│   ├── 1_etl.ipynb              # Paso 1: ETL mensual (raw → interim)
+│   ├── etl.ipynb                # Paso 1: ETL mensual (raw → interim)
 │   ├── train.ipynb              # Paso 2: Dataset train + entrenamiento LGBM
 │   └── inference.ipynb          # Paso 3: Dataset inferencia + scoring (incl. columns_filter)
 ├── src/
@@ -28,23 +29,23 @@ proyecto/
 │   │   └── make_dataset.py      # Dataset wide, features, create_train/inference_dataset
 │   ├── modeling/                # Modelo y utilidades
 │   │   ├── supervised_models.py # LGBMModel, get_preprocesor
-│   │   ├── helpers.py           # save_model, etc.
-│   │   └── legacy/              # Código legacy (no usado en poc)
-│   └── preprocessing/           # Preprocesado para el modelo
-│       ├── preprocessing.py     # ToDummy, TeEncoder, CardinalityReducer, MinMaxScalerRow
-│       └── legacy.py            # Código legacy (no usado en poc)
+│   │   └── helpers.py           # save_model
+│   └── preprocessing/
+│       └── preprocessing.py     # preprocess_model_input, TeEncoder, CardinalityReducer
 ├── data/                        # Datos (no versionados; ver docs)
 │   ├── raw/                     # Entrada del ETL (inspecciones, consumo, maestro)
 │   ├── interim/                 # Salida ETL (parquets por año/mes)
 │   ├── processed/               # Datasets wide (train, inference por cutoff)
 │   ├── predictions/             # CSV de scores por inferencia
 │   └── logs/                    # Logs de ejecución (etl_*.log, inference_*.log, train_*.log)
-├── models/                      # Modelos y artefactos (no versionados)
-│   ├── features.pkl             # Lista de columnas para el modelo
-│   ├── hyperparams.pkl          # Hiperparámetros LGBM
-│   └── lgbm_model.pkl           # Modelo entrenado (salida del train)
+├── models/                      # Artefactos (no versionados)
+│   ├── features.pkl             # Columnas del modelo (se entrega; no se genera acá)
+│   ├── hyperparams.pkl          # Hiperparámetros LGBM (se entrega; no se genera acá)
+│   └── lgbm_model.pkl           # Modelo entrenado (salida de run_train.py)
 ├── docs/                        # Documentación
 │   ├── manual_usuario.md        # Manual para ejecución mensual (ETL + inferencia)
+│   ├── guia_etl_paso_a_paso.md  # Cómo armar los Excel raw y correr el ETL
+│   ├── guia_train_paso_a_paso.md  # Cómo entrenar (pkl entregados → lgbm_model.pkl)
 │   ├── guia_inferencia_paso_a_paso.md  # Guía paso a paso inferencia (personas no técnicas)
 │   └── setup.md                 # Configuración del entorno
 ├── requirements.txt
@@ -55,7 +56,7 @@ proyecto/
 - **scripts/**: `run_etl.py`, `run_train.py`, `run_inference.py` ejecutan el pipeline desde línea de comandos (usan `config/config.yaml` por defecto; `--config otro.yaml` para otro archivo). Si está definido `paths.logs`, cada ejecución escribe un archivo de log en `data/logs/`.
 - **poc/**: notebooks equivalentes a los scripts para desarrollo y exploración.
 - **src/**: código reutilizable (ETL, dataset, modelo, preprocesado).
-- **data/** y **models/**: no se suben a Git; en otra máquina se copian o generan (ver `docs/`).
+- **data/** y **models/**: no se suben a Git. `features.pkl` y `hyperparams.pkl` se entregan y se copian a `models/` antes del train. `lgbm_model.pkl` lo genera `run_train.py`.
 
 ## Cómo ejecutar
 
@@ -76,17 +77,17 @@ Para uso operativo mensual (solo editar config e ejecutar ETL e inferencia), ver
    En `data/raw/` debe estar la estructura que espera el ETL: inspecciones, consumo y maestro (carpetas `inspecciones/`, `consumo/`, `maestro/` con archivos `*_AAAA_MM.xlsx`). Ver `config/config.yaml` → `etl.sources` y [docs/manual_usuario.md](docs/manual_usuario.md).
 
 3. **Artefactos para train**  
-   El notebook de train espera en `models/` los archivos `features.pkl` y `hyperparams.pkl`. Si no existen, hay que crearlos antes (proceso de selección de features e hiperparámetros).
+   Antes de entrenar, copiar en `models/` los archivos entregados `features.pkl` y `hyperparams.pkl`. No se generan en este repositorio. `run_train.py` los usa y escribe `models/lgbm_model.pkl`. La inferencia mensual usa ese modelo y `features.pkl`.
 
 ### Configuración (`config/config.yaml`)
 
 Todos los parámetros editables están en un solo archivo:
 
-- **paths**: rutas a `raw`, `interim`, `processed`, `models`, `predictions`, `logs` (relativas a la raíz).
+- **paths**: rutas a `raw`, `interim`, `processed`, `models`, `predictions`, `logs` y `tsfel_config` (relativas a la raíz).
 - **log_level**: nivel de logging (`INFO`, `DEBUG`, `WARNING`, `ERROR`). Aplica a ETL, train e inferencia cuando se ejecutan por script.
 - **etl**: `sources` (inspecciones, consumo, maestro), `overwrite` (reprocesar todo o solo pendientes).
 - **train**: `cutoff`, `cant_periodos`, `max_ctas_neg`, sampling (`sam_th`, `param_imb_method`), `preprocesor_num`.
-- **inference**: `cutoff`, `cant_periodos`, `contratos_list` (null = todos), `columns_filter` (opcional), `output_columns` (columnas en el CSV de scores; null = solo contrato y score).
+- **inference**: `cutoff`, `cant_periodos`, `contratos_list` (null = contratos del maestro con consumo en la ventana), `columns_filter` (opcional; columnas que ya existen antes de tsfel, por ejemplo `tipo_cliente` o `marca`), `output_columns` (columnas extra del CSV; el script siempre agrega `score` al final; null = solo contrato y score).
 
 Los notebooks y los scripts leen esta config; los scripts permiten usar otro archivo con `--config otro.yaml`.
 
@@ -110,20 +111,20 @@ Ejecutar los notebooks **desde la raíz del proyecto** (o con el kernel configur
 
 | Orden | Notebook        | Qué hace |
 |-------|-----------------|----------|
-| 1     | `1_etl.ipynb`   | ETL: lee `data/raw/`, procesa y escribe en `data/interim/` (parquets por año/mes). Usa `config` para paths y `etl.sources`/`etl.overwrite`. |
+| 1     | `etl.ipynb`     | ETL: lee `data/raw/`, procesa y escribe en `data/interim/` (parquets por año/mes). Usa `config` para paths y `etl.sources`/`etl.overwrite`. |
 | 2     | `train.ipynb`   | Lee `data/interim/`, construye dataset wide de **train** (fechas de corte ≤ cutoff de config), entrena LGBM y guarda `models/lgbm_model.pkl`. Usa `models/features.pkl` y `models/hyperparams.pkl`. |
 | 3     | `inference.ipynb` | Construye dataset wide de **inferencia** para el cutoff de config, carga modelo y features, guarda `data/predictions/scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv`. |
 
 ### Parámetros importantes (en `config/config.yaml`)
 
 - **train.cutoff**  
-  Fecha tope de inspecciones: se usan todos los meses con inspecciones hasta esa fecha para el dataset de train.
+  `null` usa todas las inspecciones válidas. Una fecha (YYYY-MM-DD) es tope: solo meses con inspección menores o iguales a esa fecha.
 
 - **inference.cutoff**  
   Mes a predecir; ese mes no entra en el análisis (solo consumo anterior). El CSV de salida se nombra `scores_<CUTOFF>_<AAAAMMDD>_<HHMMSS>.csv` (fecha y hora de ejecución).
 
 - **inference.columns_filter** (opcional)  
-  Filtro por columnas del dataset de inferencia (ej. `{ ciclo: ["14","16"] }`). Se aplica antes del cálculo costoso de tsfel. `null` = sin filtro.
+  Filtro extra del dataset de inferencia (ej. `{ tipo_cliente: ["Comercial"] }`). Se aplica antes de tsfel, y solo a columnas que ya existen (no `ciudad_sector`). `null` no agrega filtro: el universo sigue siendo los contratos del maestro con consumo en la ventana.
 
 - **cant_periodos** (train e inference)  
   Ventana de meses de consumo hacia atrás (p. ej. 12).
